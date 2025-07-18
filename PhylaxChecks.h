@@ -1,0 +1,14 @@
+// PhylaxChecks.h
+#pragma once
+
+#include <string>
+#include <unordered_set>
+#include "PhylaxSettings.h"
+
+namespace PhylaxChecks {
+
+bool CheckPassword(const std::wstring& pwd, const PhylaxSettings& settings,
+                   const std::unordered_set<std::wstring>& blacklist,
+                   const std::unordered_set<std::wstring>& patterns);
+
+} // namespace PhylaxChecks
