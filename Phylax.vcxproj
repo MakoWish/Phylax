@@ -5,16 +5,15 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
-
   <PropertyGroup Label="Globals">
     <ProjectGuid>{D3E5D732-1234-4567-89AB-123456789ABC}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>Phylax</RootNamespace>
     <TargetName>phylax</TargetName>
     <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <PlatformToolset>v143</PlatformToolset> <!-- Adjust if needed -->
+    <PlatformToolset>v143</PlatformToolset>
+    <!-- Adjust if needed -->
   </PropertyGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Optimization>MaxSpeed</Optimization>
@@ -24,11 +23,11 @@
     <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -36,7 +35,6 @@
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
   </ItemDefinitionGroup>
-
   <ItemGroup>
     <ClCompile Include="PhylaxPasswordFilter.cpp" />
     <ClCompile Include="PhylaxSettings.cpp" />
@@ -44,6 +42,5 @@
     <ClInclude Include="PhylaxSettings.h" />
     <ClInclude Include="PhylaxChecks.h" />
   </ItemGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

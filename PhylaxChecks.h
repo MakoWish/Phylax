@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_set>
 #include "PhylaxSettings.h"
+#include <Windows.h>
 
 namespace PhylaxChecks {
 
