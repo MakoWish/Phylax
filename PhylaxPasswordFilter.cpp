@@ -2,10 +2,11 @@
 // Main DLL implementation for Active Directory Password Filter
 
 #include <windows.h>
+#include <mutex>
+#include <iomanip>
 #include <ntsecapi.h>
 #include <string>
 #include <thread>
-#include <mutex>
 #include <vector>
 #include <unordered_set>
 #include <fstream>
@@ -34,8 +35,12 @@ void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     if (logFile.is_open()) {
         SYSTEMTIME time;
         GetLocalTime(&time);
-        logFile << L"[" << time.wYear << L"-" << time.wMonth << L"-" << time.wDay
-            << L" " << time.wHour << L":" << time.wMinute << L":" << time.wSecond << L"] "
+        logFile << L"[" << time.wYear << L"-"
+            << std::setw(2) << std::setfill(L'0') << time.wMonth << L"-"
+            << std::setw(2) << std::setfill(L'0') << time.wDay << L" "
+            << std::setw(2) << std::setfill(L'0') << time.wHour << L":"
+            << std::setw(2) << std::setfill(L'0') << time.wMinute << L":"
+            << std::setw(2) << std::setfill(L'0') << time.wSecond << L"] "
             << message << std::endl;
     }
 }
@@ -106,29 +111,38 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     PUNICODE_STRING Password,
     BOOLEAN SetOperation
 ) {
-    std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
     std::wstring acct(AccountName->Buffer, AccountName->Length / sizeof(WCHAR));
+    std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
+
     LogEvent(L"[DEBUG] PasswordFilter() called for account: " + acct, LOGLEVEL_DEBUG);
+
+    std::wstring reason;
+    bool result;
 
     {
         std::lock_guard<std::mutex> lock(g_settingsMutex);
-        if (!PhylaxChecks::CheckPassword(pwd, g_settings, g_blacklist, g_badPatterns)) {
-            LogEvent(L"[ERROR] Password rejected for account: " + acct, LOGLEVEL_ERROR);
-            return FALSE;
+        result = PhylaxChecks::CheckPassword(pwd, g_settings, g_blacklist, g_badPatterns, reason);
+    }
+
+    // Static cache to suppress duplicate log entries
+    static std::mutex logMutex;
+    static std::wstring lastAcct;
+    static std::wstring lastReason;
+    static ULONGLONG lastTimestamp = 0;
+
+    if (!result) {
+        ULONGLONG now = GetTickCount64();
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (acct != lastAcct || reason != lastReason || (now - lastTimestamp) > 1000) {
+            LogEvent(L"[ERROR] Password rejected for account: " + acct + L" - Reason: " + reason, LOGLEVEL_ERROR);
+            lastAcct = acct;
+            lastReason = reason;
+            lastTimestamp = now;
         }
+        return FALSE;
     }
 
     LogEvent(L"[INFO] Password accepted for account: " + acct, LOGLEVEL_INFO);
     return TRUE;
 }
 
-void LogEvent(const std::wstring& message) {
-    std::wofstream logFile;
-    logFile.open(g_settings.logFullPath, std::ios_base::app);
-    if (logFile.is_open()) {
-        SYSTEMTIME time;
-        GetLocalTime(&time);
-        logFile << L"[" << time.wYear << L"-" << time.wMonth << L"-" << time.wDay
-            << L" " << time.wHour << L":" << time.wMinute << L":" << time.wSecond << L"] " << message << std::endl;
-    }
-}

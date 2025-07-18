@@ -28,5 +28,6 @@ public:
     std::wstring logFullPath;
     DWORD logLevel;
 
+    PhylaxSettings();
     void LoadFromRegistry();
 };

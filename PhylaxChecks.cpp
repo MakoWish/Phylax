@@ -71,16 +71,35 @@ bool ContainsBadPattern(const std::wstring& pwd, const std::unordered_set<std::w
 }
 
 bool CheckPassword(const std::wstring& pwd, const PhylaxSettings& settings,
-                   const std::unordered_set<std::wstring>& blacklist,
-                   const std::unordered_set<std::wstring>& patterns) {
-
-    if (!IsMinLength(pwd, settings.minimumLength)) return false;
-    if (!HasRequiredComplexity(pwd, settings.complexity)) return false;
-    if (settings.rejectSequences && HasSequential(pwd, settings.rejectSequencesLength)) return false;
-    if (settings.rejectRepeats && HasRepeated(pwd, settings.rejectRepeatsLength)) return false;
-    if (IsBlacklisted(pwd, blacklist)) return false;
-    if (ContainsBadPattern(pwd, patterns)) return false;
+    const std::unordered_set<std::wstring>& blacklist,
+    const std::unordered_set<std::wstring>& patterns,
+    std::wstring& reason) {
+    if (pwd.length() < settings.minimumLength) {
+        reason = L"insufficient length";
+        return false;
+    }
+    if (!HasRequiredComplexity(pwd, settings.complexity)) {
+        reason = L"insufficient complexity";
+        return false;
+    }
+    if (settings.rejectSequences && HasSequential(pwd, settings.rejectSequencesLength)) {
+        reason = L"sequential pattern";
+        return false;
+    }
+    if (settings.rejectRepeats && HasRepeated(pwd, settings.rejectRepeatsLength)) {
+        reason = L"repeated characters";
+        return false;
+    }
+    if (blacklist.find(pwd) != blacklist.end()) {
+        reason = L"blacklisted password";
+        return false;
+    }
+    if (ContainsBadPattern(pwd, patterns)) {
+        reason = L"forbidden pattern";
+        return false;
+    }
     return true;
 }
+
 
 } // namespace PhylaxChecks

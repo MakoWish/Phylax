@@ -9,7 +9,9 @@
 namespace PhylaxChecks {
 
 bool CheckPassword(const std::wstring& pwd, const PhylaxSettings& settings,
-                   const std::unordered_set<std::wstring>& blacklist,
-                   const std::unordered_set<std::wstring>& patterns);
+    const std::unordered_set<std::wstring>& blacklist,
+    const std::unordered_set<std::wstring>& patterns,
+    std::wstring& reason);
+
 
 } // namespace PhylaxChecks

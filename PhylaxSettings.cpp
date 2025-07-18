@@ -8,6 +8,19 @@
 
 #define PHYLAX_REG_PATH L"SOFTWARE\\Phylax"
 
+PhylaxSettings::PhylaxSettings()
+    : logSize(10240),
+    logRetention(10),
+    minimumLength(12),
+    complexity(3),
+    rejectSequences(true),
+    rejectSequencesLength(3),
+    rejectRepeats(true),
+    rejectRepeatsLength(3),
+    logLevel(LOGLEVEL_INFO) {
+}
+
+
 void PhylaxSettings::LoadFromRegistry() {
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, PHYLAX_REG_PATH, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
