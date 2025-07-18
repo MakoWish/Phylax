@@ -5,9 +5,9 @@
 
 ![Phylax Password Policy](logo.png)
 
-Phylax is a password policy add-in for Microsoft Active Directory
-
 ## About
+
+Phylax is a password policy add-in for Microsoft Active Directory
 
 ## Configuration
 
