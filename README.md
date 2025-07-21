@@ -24,7 +24,7 @@ Technical reference: [Password Filters](https://learn.microsoft.com/en-us/window
 
 Grab the latest release from [releases](https://github.com/MakoWish/Phylax/releases/latest). 
 
-`phylax.dll` must be placed on each domain controller in `C:\Windows\System32`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot.
+`phylax.dll` must be placed on each domain controller in `C:\Windows\System32`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot. Under:
 
 ```reg
 HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\lsa
@@ -71,7 +71,7 @@ Phylax watches for changes to both the registry and external files (`BlacklistFi
 - Registry keys are reloaded automatically every minute if changes are detected.
 - Blacklist and pattern files are reloaded automatically every minute if changes are detected.
 
-### Example: Enforcing for Specific Groups
+### Enforcing for Specific Groups
 
 To apply the policy only to select AD groups (e.g. during testing):
 
