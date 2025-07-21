@@ -7,64 +7,152 @@
 
 ## About
 
-Phylax is a password policy add-in for Microsoft Active Directory. Any time a password is set or changed, Phylax is called to check for blacklisted passwords or blacklisted patterns.
+Phylax was designed to improve password hygiene in Windows environments by allowing organizations to:
+
+- Enforce minimum complexity and length requirements
+- Reject passwords that match common patterns or dictionary words
+- Block known compromised or disallowed passwords via a blacklist
+- Target enforcement to specific Active Directory groups
+- Log all password change activity and reasons for rejection
+- Support real-time updates to policies via registry and file changes — no reboot or DLL reload required
+
+Phylax provides a flexible foundation for organizations looking to enforce modern password security best practices while maintaining full control and auditability.
 
 Technical reference: [Password Filters](https://learn.microsoft.com/en-us/windows/win32/secmgmt/password-filters?redirectedfrom=MSDN)
 
-### Blacklisted Passwords
-
-The blacklisted passwords file (default: `C:\Windows\System32\phylax_blacklist.txt`) should contain a list of blacklisted passwords that are to be blocked. This list enforces an exact, case-sensitive match of passwords to be blocked. This is helpful for blocking known-breached passwords.
-
-**Example**:  
-`phylax_blacklist.txt` contains `S3cr3tP@ss`  
-* A user attempts to change their password to `s2cr3tP@ss`
-  * Blocked since the password matches without case sensitivity. 
-* A user attempts to change their password to `S3cr3tP@ssw0rd!`
-  * Not blocked since appending `w0rd!` renders this not an exact match.
-
-### Bad Patterns
-
-The bad patterns file (default: `C:\Windows\System32\phylax_bad_patterns.txt`) should contain a list of patterns or strings that may not exist in a password at all. This is a case-insensitive match.
-
-**Example**:  
-`phylax_bad_patterns.txt` contains `S3cr3tP@ss`
-* A user attempts to change their password to `s3cr3tp@ss`
-  * Blocked since the password matches without case sensitivity.
-* A user attempts to change their password to `S3cr3tP@ssw0rd!`
-  * Blocked since the password still contains the bad pattern `S3cr3tP@ss`
 ## Configuration
 
-Phylax is highly configurable via self-reloading registry settings. The first time Phylax is run, the following default registry settings are created. 
+### Registry Settings
 
-![Registry Settings](registry.png)
-
-These settings may be adjusted at any time, and the changes will be reloaded automatically. A check is performed every one minute for any changes.
-
-### Default Registry Settings
-
-The first time Phylax is loaded, all default registry settings are created. If you would like to make these settings beforehand, to ensure your preferences are loaded at the start, you may do so. Registry settings are located in:
+Phylax is configured via the Windows Registry under:
 
 ```
 HKEY_LOCAL_MACHINE\SOFTWARE\Phylax
 ```
 
-|**Setting**|**Description**|**Default**|
-|-|--------------------------------|-|
-|**LogLevel**|Setting the logging level (DEBUG, INFO, WARN, ERROR)|`INFO`|
-|**LogPath**|Path to the log file|`C:\Windows\System32\`|
-|**LogName**|Change the log file name|`phylax.log`|
-|**LogRetention**|Number of log files to be retained|`10`|
-|**LogSize**|Size (in kB) of log file before rotating|`10240`|
-|**Complexity**|How many categories (lower, upper, number, special) must be included|`3`|
-|**MinimumLength**|Minimum password length to be enforced|`12`|
-|**RejectRepeats**|Reject repeated characters (`111`, `!!!`, `aaa`, `AAA`)|`1`|
-|**RejectRepeatsLength**|Length of pattern to be rejected|`3`|
-|**RejectSequences**|Reject sequence of characters (`123`, `321`, `abc`, `bca`)|`1`|
-|**RejectSequencesLength**|Length of sequence to be rejected|`3`|
-|**EnforcedGroups**|Comma-delimited list of Active Directory security groups to apply policy to.|None|
-|**BadPatternsFile**|Location of "bad patterns" file.|`C:\Windows\System32\phylax_bad_patterns.txt`|
-|**BlacklistFile**|Location of password blacklist file.|`C:\Windows\System32\phylax_blacklist.txt`|
+| Key Name                | Type       | Default                          | Description |
+|-------------------------|------------|----------------------------------|-------------|
+| `LogPath`               | `REG_SZ`   | `C:\Windows\System32`            | Path to the folder where logs will be written |
+| `LogName`               | `REG_SZ`   | `phylax.log`                     | Name of the log file |
+| `LogSize`               | `REG_DWORD`| `10240` (KB)                     | Maximum log file size before rotation |
+| `LogRetention`          | `REG_DWORD`| `10`                             | Number of rotated logs to retain |
+| `LogLevel`              | `REG_SZ`   | `INFO`                           | One of: `DEBUG`, `INFO`, `WARN`, `ERROR` |
+| `MinimumLength`         | `REG_DWORD`| `12`                             | Minimum allowed password length |
+| `Complexity`            | `REG_DWORD`| `3`                              | Minimum number of character classes (uppercase, lowercase, digit, symbol) required |
+| `RejectSequences`       | `REG_DWORD`| `1`                              | Reject character sequences (e.g. `abcd`, `1234`) |
+| `RejectSequencesLength` | `REG_DWORD`| `3`                              | Minimum sequence length to reject |
+| `RejectRepeats`         | `REG_DWORD`| `1`                              | Reject repeated characters (e.g. `aaaa`, `1111`) |
+| `RejectRepeatsLength`   | `REG_DWORD`| `3`                              | Minimum repeat length to reject |
+| `BlacklistFile`         | `REG_SZ`   | `C:\Windows\System32\phylax_blacklist.txt` | Path to blacklist file (one password per line) |
+| `BadPatternsFile`       | `REG_SZ`   | `C:\Windows\System32\phylax_bad_patterns.txt` | Path to file with known bad substrings |
+| `EnforcedGroups`        | `REG_SZ`   | *(empty)*                        | Comma-delimited list of AD group names to enforce policy on (if empty, policy is applied to all users) |
+
+### Real-Time Updates
+
+Phylax watches for changes to both the registry and external files (`BlacklistFile`, `BadPatternsFile`). You do **not** need to restart services or reboot to apply changes:
+- Registry keys are reloaded automatically every 10 seconds (configurable).
+- Blacklist and pattern files are reloaded automatically when changes are detected.
+
+### Example: Enforcing for Specific Groups
+
+To apply the policy only to select AD groups (e.g. during testing):
+
+```reg
+"EnforcedGroups"="Domain Admins, Service Accounts, Tier0 Users"
+```
+
+If the current user changing their password is not a member of any of the listed groups, the policy checks will be skipped for that attempt. If `EnforcedGroups` is empty, the password policy applies to all users.
+
+### Blocklist & Pattern Files
+
+#### Blacklist File
+
+Path: as defined in `BlacklistFile`  
+Format: one password per line (e.g. breached or disallowed values  
+Case-insensitive matches will be rejected.  
+**Example**:  
+```
+p@ssw0rd1!
+breached@cct1
+qwerty731
+letmein
+```
+
+#### Bad Patterns File
+
+Path: as defined in `BadPatternsFile`  
+Format: one string per line. If a password **_contains_** this string (anywhere), it will be rejected.  
+**Example**:  
+```
+admin
+p@ss
+qwerty
+companyname
+```
+
+This allows rejecting passwords like `MyAdminPass123` even though `admin` is only part of the full string.
+
+### Sequence Rejection
+
+```reg
+"RejectSequences"="1"
+```
+
+Setting this to `1` enables blocking of character sequences (`1234`, `4321`, `abcd`, `dcba`).  
+Setting this to `0` disables this enforcement.
+
+```reg
+"RejectSequencesLength"="3"
+```
+
+Setting this to `3` will block three-character sequences like `123` or `bca`, but will allow longer sequences like `1234`, or `dbca`
+If `RejectSequences` is set to `0`, this setting is ignored.
+
+### Repeated Character Rejection
+
+```reg
+"RejectRepeats"="1"
+```
+
+Setting this to `1` enables blocking of repeated characters (`1111`, `aaaa`).  
+Setting this to `0` disables this enforcement.
+
+```reg
+"RejectRepeatsLength"="3"
+```
+
+Setting this to `3` will block three-character repetitions like `111` or `aaa`, but will allow longer repetitions like `1111`, or `aaaa`
+If `RejectRepeats` is set to `0`, this setting is ignored. 
+
+## Bug Reporting
+
+Please report bugs or unexpected behavior by opening an issue in the [GitHub Issues](../../issues) section.
+
+When reporting a bug, include the following where applicable:
+- Description of the issue
+- Version of Windows / Active Directory
+- Relevant log entries from `phylax.log`
+- Reproduction steps, if known
+- Registry settings (with any sensitive values redacted)
+
+---
 
 ## Contributing
 
-If you would like to contribute to this project, please first open an issue with details on what you would like to contribute, and why. From there, we can discuss the proposed changes before opening a PR.
+Contributions are welcome!
+
+### To contribute:
+1. Fork the repository
+2. Create a new feature or fix branch
+3. Make your changes with clear commit messages
+4. Submit a pull request with a description of what you changed and why
+
+**Please test your changes thoroughly before submitting.**
+
+If you're not sure where to start, feel free to open a discussion or an issue — suggestions, testing, documentation improvements, and code are all welcome.
+
+---
+
+## License
+
+Phylax is released under the MIT License. See `LICENSE` for details.
