@@ -10,6 +10,7 @@
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <chrono>
@@ -23,12 +24,14 @@
 #pragma comment(lib, "Shlwapi.lib")
 
 // Globals
+namespace fs = std::filesystem;
 std::mutex g_settingsMutex;
 std::atomic_bool g_running(true);
-PhylaxSettings g_settings;
-CRITICAL_SECTION g_cs;
 std::unordered_set<std::wstring> g_blacklist;
 std::unordered_set<std::wstring> g_badPatterns;
+PhylaxSettings g_settings;
+CRITICAL_SECTION g_cs;
+DWORD lastRegistryHash = 0;
 
 void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     if (level < g_settings.logLevel) return;
@@ -58,6 +61,36 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
         DeleteCriticalSection(&g_cs);
     }
     return TRUE;
+}
+
+DWORD ComputeRegistrySettingsHash() {
+    PhylaxSettings tempSettings;
+    tempSettings.LoadFromRegistry();
+
+    std::wstringstream ss;
+    ss << tempSettings.logPath
+        << tempSettings.logName
+        << tempSettings.logSize
+        << tempSettings.logRetention
+        << tempSettings.minimumLength
+        << tempSettings.complexity
+        << tempSettings.rejectSequences
+        << tempSettings.rejectSequencesLength
+        << tempSettings.rejectRepeats
+        << tempSettings.rejectRepeatsLength
+        << tempSettings.blacklistPath
+        << tempSettings.badPatternsPath
+        << tempSettings.logLevel;
+
+    for (const auto& group : tempSettings.enforcedGroups)
+        ss << group;
+
+    std::wstring settingsStr = ss.str();
+    DWORD hash = 0;
+    for (wchar_t ch : settingsStr)
+        hash = (hash * 131) + ch;  // simple rolling hash
+
+    return hash;
 }
 
 void LoadBlacklist(const std::wstring& path) {
@@ -91,14 +124,41 @@ void LoadBadPatterns(const std::wstring& path) {
 }
 
 void BackgroundWorker() {
+    static fs::file_time_type lastBlacklistWriteTime;
+    static fs::file_time_type lastBadPatternsWriteTime;
+
     while (g_running) {
         {
             std::lock_guard<std::mutex> lock(g_settingsMutex);
-            g_settings.LoadFromRegistry();
-            LogEvent(L"[DEBUG] Settings loaded from registry.", LOGLEVEL_DEBUG);
+            DWORD currentHash = ComputeRegistrySettingsHash();
+            if (currentHash != lastRegistryHash) {
+                EnterCriticalSection(&g_cs);
+                g_settings.LoadFromRegistry();
+                LeaveCriticalSection(&g_cs);
+                LogEvent(L"[INFO] Registry settings reloaded due to detected change.", LOGLEVEL_INFO);
+                lastRegistryHash = currentHash;
+            }
         }
-        LoadBlacklist(g_settings.blacklistPath);
-        LoadBadPatterns(g_settings.badPatternsPath);
+
+        // Check if blacklist has changed
+        if (fs::exists(g_settings.blacklistPath)) {
+            auto newTime = fs::last_write_time(g_settings.blacklistPath);
+            if (newTime != lastBlacklistWriteTime) {
+                LogEvent(L"[INFO] Detected change in blacklist file, reloading.", LOGLEVEL_INFO);
+                LoadBlacklist(g_settings.blacklistPath);
+                lastBlacklistWriteTime = newTime;
+            }
+        }
+
+        // Check if bad patterns file has changed
+        if (fs::exists(g_settings.badPatternsPath)) {
+            auto newTime = fs::last_write_time(g_settings.badPatternsPath);
+            if (newTime != lastBadPatternsWriteTime) {
+                LogEvent(L"[INFO] Detected change in bad patterns file, reloading.", LOGLEVEL_INFO);
+                LoadBadPatterns(g_settings.badPatternsPath);
+                lastBadPatternsWriteTime = newTime;
+            }
+        }
         std::this_thread::sleep_for(std::chrono::minutes(5));
     }
 }
