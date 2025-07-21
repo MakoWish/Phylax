@@ -20,6 +20,24 @@ Phylax provides a flexible foundation for organizations looking to enforce moder
 
 Technical reference: [Password Filters](https://learn.microsoft.com/en-us/windows/win32/secmgmt/password-filters?redirectedfrom=MSDN)
 
+## Installation
+
+Grab the latest release from [releases](https://github.com/octo-org/octo-repo/releases/latest). 
+
+`phylax.dll` must be placed on each domain controller in `C:\Windows\System32`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot.
+
+```reg
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\lsa
+```
+
+Modify the `REG_MULTI_SZ` key `Notification Packages` and append the name of the DLL `phylax` (without the DLL extension) onto a new line. Save the key's new settings, and reboot the domain controller. Once reboot, Phylax will be loaded and start enforcing your chosen settings.
+
+_**Note**: Reboots are not required for changes. Modifications to the blacklist, bad patterns file, and registry settings changes are loaded automatically._
+
+## Removal
+
+To uninstall Phylax, you must remove the `phylax` string from the `REG_MULTI_SZ` key `Notification Packages`. Save the changes, and reboot the domain controller.
+
 ## Configuration
 
 ### Registry Settings
@@ -50,8 +68,8 @@ HKEY_LOCAL_MACHINE\SOFTWARE\Phylax
 ### Real-Time Updates
 
 Phylax watches for changes to both the registry and external files (`BlacklistFile`, `BadPatternsFile`). You do **not** need to restart services or reboot to apply changes:
-- Registry keys are reloaded automatically every 10 seconds (configurable).
-- Blacklist and pattern files are reloaded automatically when changes are detected.
+- Registry keys are reloaded automatically every minute if changes are detected.
+- Blacklist and pattern files are reloaded automatically every minute if changes are detected.
 
 ### Example: Enforcing for Specific Groups
 
