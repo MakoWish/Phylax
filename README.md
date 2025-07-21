@@ -24,7 +24,7 @@ These settings may be adjusted at any time, and the changes will be reloaded aut
 #### Logging
 
 |Setting|Description|Default|
----
+|-|-|-|
 |**LogLevel**|Setting the logging level (DEBUG, INFO, WARN, ERROR)|`INFO`|
 |**LogPath**|Path to the log file|`C:\Windows\System32\`|
 |**LogName**|Change the log file name|`phylax.log`|
@@ -34,7 +34,7 @@ These settings may be adjusted at any time, and the changes will be reloaded aut
 #### Complexity Enforcement
 
 |Setting|Description|Default|
----
+|-|-|-|
 |**Complexity**|How many categories (lowercase, uppercase, numeric, special) must be included in the password|`3`|
 |**MinimumLength**|Minimum password length to be enforced|`12`|
 |**RejectRepeats**|Reject repeated characters (`111`, `!!!`, `aaa`, `AAA`)|`1` (True)|
@@ -43,7 +43,7 @@ These settings may be adjusted at any time, and the changes will be reloaded aut
 |**RejectSequencesLength**|Length of sequence to be rejected|`3`|
 
 |Setting|Description|Default|
----
+|-|-|-|
 |**BadPatternsFile**|Location of "bad patterns" file.|`C:\Windows\System32\phylax_bad_patterns.txt`|
 |**BlacklistFile**|Location of password blacklist file.|`C:\Windows\System32\phylax_blacklist.txt`|
 
