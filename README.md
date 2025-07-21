@@ -29,17 +29,17 @@ These settings may be adjusted at any time, and the changes will be reloaded aut
 |**LogPath**|Path to the log file|`C:\Windows\System32\`|
 |**LogName**|Change the log file name|`phylax.log`|
 |**LogRetention**|Number of log files to be retained|`10`|
-|**LogSize**|Size (in kB) of log file before rotating|`10240` (10MB)|
+|**LogSize**|Size (in kB) of log file before rotating|`10240`|
 
 #### Complexity Enforcement
 
 |Setting|Description|Default|
 |-|-|-|
-|**Complexity**|How many categories (lowercase, uppercase, numeric, special) must be included in the password|`3`|
+|**Complexity**|How many categories (lower, upper, number, special) must be included|`3`|
 |**MinimumLength**|Minimum password length to be enforced|`12`|
-|**RejectRepeats**|Reject repeated characters (`111`, `!!!`, `aaa`, `AAA`)|`1` (True)|
+|**RejectRepeats**|Reject repeated characters (`111`, `!!!`, `aaa`, `AAA`)|`1`|
 |**RejectRepeatsLength**|Length of pattern to be rejected|`3`|
-|**RejectSequences**|Reject sequence of characters (`123`, `321`, `abc`, `bca`)|`1` (True)|
+|**RejectSequences**|Reject sequence of characters (`123`, `321`, `abc`, `bca`)|`1`|
 |**RejectSequencesLength**|Length of sequence to be rejected|`3`|
 
 |Setting|Description|Default|
