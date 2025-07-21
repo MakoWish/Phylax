@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iterator>
 #include <string>
+#include <locale>
 #include <unordered_set>
 
 namespace PhylaxChecks {
@@ -53,8 +54,14 @@ bool HasRepeated(const std::wstring& pwd, DWORD repeatLen) {
     return false;
 }
 
+std::wstring ToLower(const std::wstring& input) {
+    std::wstring output = input;
+    std::transform(output.begin(), output.end(), output.begin(), ::towlower);
+    return output;
+}
+
 bool IsBlacklisted(const std::wstring& pwd, const std::unordered_set<std::wstring>& blacklist) {
-    return blacklist.find(pwd) != blacklist.end();
+    return blacklist.find(ToLower(pwd)) != blacklist.end();
 }
 
 bool ContainsBadPattern(const std::wstring& pwd, const std::unordered_set<std::wstring>& patterns) {

@@ -80,13 +80,13 @@ void PhylaxSettings::CreateDefaultRegistrySettings() {
     // Ensure blacklist and bad patterns files exist
     std::wofstream blacklistOut(blacklistPath, std::ios::app);
     if (blacklistOut.is_open()) {
-        blacklistOut << L"# Default Phylax blacklist\n# Enter blacklisted passwords one per line\n";
+        blacklistOut << L"# Default Phylax blacklist\n# Enter case-insensitive blacklisted passwords one per line\n";
         blacklistOut.close();
     }
 
     std::wofstream patternsOut(badPatternsPath, std::ios::app);
     if (patternsOut.is_open()) {
-        patternsOut << L"# Default Phylax bad patterns\n# Enter forbidden patterns one per line\n";
+        patternsOut << L"# Default Phylax bad patterns\n# Enter case-insensitive forbidden patterns one per line\n";
         patternsOut.close();
     }
 }

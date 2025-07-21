@@ -21,6 +21,7 @@
 #include "PhylaxChecks.h"
 #include <algorithm>
 #include "PhylaxADUtils.h"
+#include "PhylaxGlobals.h"
 
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -67,6 +68,8 @@ static void RotateLogIfNeeded() {
 static void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     if (level < g_settings.logLevel) return;
 
+    EnterCriticalSection(&g_logLock);  //
+
     CreateDirectoryW(g_settings.logPath.c_str(), NULL);
 
     RotateLogIfNeeded();
@@ -84,15 +87,19 @@ static void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
             << std::setw(2) << std::setfill(L'0') << time.wSecond << L"] "
             << message << std::endl;
     }
+
+    LeaveCriticalSection(&g_logLock);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         InitializeCriticalSection(&g_cs);
+        InitializeCriticalSection(&g_logLock);
         g_settings.LoadFromRegistry();
     }
     else if (fdwReason == DLL_PROCESS_DETACH) {
         DeleteCriticalSection(&g_cs);
+        DeleteCriticalSection(&g_logLock);
     }
     return TRUE;
 }
@@ -137,7 +144,16 @@ static void LoadBlacklist(const std::wstring& path) {
     }
     std::wstring line;
     while (std::getline(file, line)) {
-        g_blacklist.insert(line);
+        // Trim whitespace (optional but recommended)
+        line.erase(0, line.find_first_not_of(L" \t\r\n"));
+        line.erase(line.find_last_not_of(L" \t\r\n") + 1);
+
+        // Convert to lowercase
+        std::transform(line.begin(), line.end(), line.begin(), ::towlower);
+
+        if (!line.empty()) {
+            g_blacklist.insert(line);
+        }
     }
     LogEvent(L"[INFO] Blacklist loaded. Entries: " + std::to_wstring(g_blacklist.size()), LOGLEVEL_INFO);
 }
@@ -169,7 +185,6 @@ static void BackgroundWorker() {
                 EnterCriticalSection(&g_cs);
                 LogEvent(L"[DEBUG] Registry settings changes detected. Reloading...", LOGLEVEL_DEBUG);
                 g_settings.LoadFromRegistry();
-                LeaveCriticalSection(&g_cs);
                 LogEvent(L"[DEBUG] Registry setting logPath: " + g_settings.logPath, LOGLEVEL_DEBUG);
                 LogEvent(L"[DEBUG] Registry setting logName: " + g_settings.logName, LOGLEVEL_DEBUG);
                 LogEvent(L"[DEBUG] Registry setting logSize: " + g_settings.logSize, LOGLEVEL_DEBUG);
@@ -182,6 +197,7 @@ static void BackgroundWorker() {
                 LogEvent(L"[DEBUG] Registry setting rejectRepeatsLength: " + g_settings.rejectRepeatsLength, LOGLEVEL_DEBUG);
                 LogEvent(L"[DEBUG] Registry setting blacklistPath: " + g_settings.blacklistPath, LOGLEVEL_DEBUG);
                 LogEvent(L"[DEBUG] Registry setting badPatternsPath: " + g_settings.badPatternsPath, LOGLEVEL_DEBUG);
+                LeaveCriticalSection(&g_cs);
                 lastRegistryHash = currentHash;
             }
         }
