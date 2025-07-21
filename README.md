@@ -24,7 +24,7 @@ These settings may be adjusted at any time, and the changes will be reloaded aut
 #### Logging
 
 |Setting|Description|Default|
-|-|-|-|
+|-|--------------------------------|-|
 |**LogLevel**|Setting the logging level (DEBUG, INFO, WARN, ERROR)|`INFO`|
 |**LogPath**|Path to the log file|`C:\Windows\System32\`|
 |**LogName**|Change the log file name|`phylax.log`|
