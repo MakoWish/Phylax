@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 #include <fstream>
 #include <sstream>
 #include <chrono>
@@ -16,6 +17,8 @@
 #include <shlwapi.h>
 #include "PhylaxSettings.h"
 #include "PhylaxChecks.h"
+#include <algorithm>
+#include "PhylaxADUtils.h"
 
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -23,6 +26,7 @@
 std::mutex g_settingsMutex;
 std::atomic_bool g_running(true);
 PhylaxSettings g_settings;
+CRITICAL_SECTION g_cs;
 std::unordered_set<std::wstring> g_blacklist;
 std::unordered_set<std::wstring> g_badPatterns;
 
@@ -45,6 +49,16 @@ void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     }
 }
 
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        InitializeCriticalSection(&g_cs);
+        g_settings.LoadFromRegistry();
+    }
+    else if (fdwReason == DLL_PROCESS_DETACH) {
+        DeleteCriticalSection(&g_cs);
+    }
+    return TRUE;
+}
 
 void LoadBlacklist(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(g_settingsMutex);
@@ -114,7 +128,19 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     std::wstring acct(AccountName->Buffer, AccountName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
 
-    LogEvent(L"[DEBUG] PasswordFilter() called for account: " + acct, LOGLEVEL_DEBUG);
+    // LogEvent(L"[DEBUG] PasswordFilter() called for account: " + acct, LOGLEVEL_DEBUG);
+
+    // Group check logic here
+    if (!g_settings.enforcedGroups.empty()) {
+        if (!IsUserInEnforcedGroup(acct.c_str(), g_settings.enforcedGroups)) {
+            LogEvent(L"[DEBUG] User '" + acct + L"' is not in an enforced group, skipping password checks.", LOGLEVEL_DEBUG);
+            LeaveCriticalSection(&g_cs);
+            return TRUE;
+        }
+        else {
+            LogEvent(L"[DEBUG] User '" + acct + L"' is in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
+        }
+    }
 
     std::wstring reason;
     bool result;
@@ -134,7 +160,7 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         ULONGLONG now = GetTickCount64();
         std::lock_guard<std::mutex> lock(logMutex);
         if (acct != lastAcct || reason != lastReason || (now - lastTimestamp) > 1000) {
-            LogEvent(L"[ERROR] Password rejected for account: " + acct + L" - Reason: " + reason, LOGLEVEL_ERROR);
+            LogEvent(L"[ERROR] Password rejected due to " + reason + L" for account: " + acct, LOGLEVEL_ERROR);
             lastAcct = acct;
             lastReason = reason;
             lastTimestamp = now;

@@ -20,6 +20,14 @@ PhylaxSettings::PhylaxSettings()
     logLevel(LOGLEVEL_INFO) {
 }
 
+std::wstring ReadStringSetting(HKEY hKey, const std::wstring& name, const std::wstring& defaultValue) {
+    WCHAR buffer[1024];
+    DWORD size = sizeof(buffer);
+    if (RegQueryValueExW(hKey, name.c_str(), nullptr, nullptr, (LPBYTE)buffer, &size) == ERROR_SUCCESS) {
+        return std::wstring(buffer);
+    }
+    return defaultValue;
+}
 
 void PhylaxSettings::LoadFromRegistry() {
     HKEY hKey;
@@ -78,6 +86,16 @@ void PhylaxSettings::LoadFromRegistry() {
         GetDWORD(L"RejectRepeatsLength", rejectRepeatsLength, 3);
         GetStr(L"BlacklistFile", blacklistPath, L"C:\\Windows\\System32\\phylax_blacklist.txt");
         GetStr(L"BadPatternsFile", badPatternsPath, L"C:\\Windows\\System32\\phylax_bad_patterns.txt");
+
+        std::wstring groupsRaw = ReadStringSetting(hKey, L"EnforcedGroups", L"");
+        std::wstringstream ss(groupsRaw);
+        std::wstring group;
+        enforcedGroups.clear();
+        while (std::getline(ss, group, L',')) {
+            group.erase(0, group.find_first_not_of(L""));
+            group.erase(group.find_last_not_of(L"") + 1);
+            if (!group.empty()) enforcedGroups.push_back(group);
+        }
 
         // Read LogLevel as string
         std::wstring lvlStr;

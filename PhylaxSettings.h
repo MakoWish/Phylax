@@ -3,6 +3,9 @@
 
 #include <string>
 #include <Windows.h>
+#include <vector>
+#include <sstream>
+#include <algorithm>
 
 enum LogLevel {
     LOGLEVEL_DEBUG = 0,
@@ -13,6 +16,7 @@ enum LogLevel {
 
 class PhylaxSettings {
 public:
+    std::vector<std::wstring> enforcedGroups;
     std::wstring logPath;
     std::wstring logName;
     DWORD logSize;

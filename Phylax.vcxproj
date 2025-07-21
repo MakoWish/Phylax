@@ -36,9 +36,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="PhylaxADUtils.cpp" />
     <ClCompile Include="PhylaxPasswordFilter.cpp" />
     <ClCompile Include="PhylaxSettings.cpp" />
     <ClCompile Include="PhylaxChecks.cpp" />
+    <ClInclude Include="PhylaxADUtils.h" />
     <ClInclude Include="PhylaxSettings.h" />
     <ClInclude Include="PhylaxChecks.h" />
   </ItemGroup>
