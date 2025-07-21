@@ -68,8 +68,8 @@ HKEY_LOCAL_MACHINE\SOFTWARE\Phylax
 ### Real-Time Updates
 
 Phylax watches for changes to both the registry and external files (`BlacklistFile`, `BadPatternsFile`). You do **not** need to restart services or reboot to apply changes:
-- Registry keys are reloaded automatically every minute if changes are detected.
-- Blacklist and pattern files are reloaded automatically every minute if changes are detected.
+- Registry keys are reloaded automatically every 10 seconds if changes are detected.
+- Blacklist and pattern files are reloaded automatically every 10 seconds if changes are detected.
 
 ### Enforcing for Specific Groups
 
