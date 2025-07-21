@@ -3,13 +3,96 @@
 #include <windows.h>
 #include <shlwapi.h>
 #include <algorithm>
+#include <fstream>
 
 #pragma comment(lib, "Shlwapi.lib")
 
 #define PHYLAX_REG_PATH L"SOFTWARE\\Phylax"
 
-PhylaxSettings::PhylaxSettings()
-    : logSize(10240),
+void PhylaxSettings::CreateDefaultRegistrySettings() {
+    HKEY hKey;
+    DWORD disposition;
+
+    if (RegCreateKeyExW(
+        HKEY_LOCAL_MACHINE,
+        PHYLAX_REG_PATH,
+        0,
+        nullptr,
+        REG_OPTION_NON_VOLATILE,
+        KEY_WRITE | KEY_QUERY_VALUE,
+        nullptr,
+        &hKey,
+        &disposition) == ERROR_SUCCESS) {
+
+        struct StringDefault {
+            const wchar_t* name;
+            const wchar_t* value;
+        };
+
+        struct DWORDDefault {
+            const wchar_t* name;
+            DWORD value;
+        };
+
+        StringDefault stringDefaults[] = {
+            {L"LogPath", L"C:\\Windows\\System32"},
+            {L"LogName", L"phylax.log"},
+            {L"BlacklistFile", L"C:\\Windows\\System32\\phylax_blacklist.txt"},
+            {L"BadPatternsFile", L"C:\\Windows\\System32\\phylax_bad_patterns.txt"},
+            {L"LogLevel", L"INFO"},
+            {L"EnforcedGroups", L""}
+        };
+
+        DWORDDefault dwordDefaults[] = {
+            {L"LogSize", 10240},
+            {L"LogRetention", 10},
+            {L"MinimumLength", 12},
+            {L"Complexity", 3},
+            {L"RejectSequences", 1},
+            {L"RejectSequencesLength", 3},
+            {L"RejectRepeats", 1},
+            {L"RejectRepeatsLength", 3}
+        };
+
+        // Set string values if they do not exist
+        for (const auto& def : stringDefaults) {
+            DWORD type = 0;
+            DWORD size = 0;
+            if (RegQueryValueExW(hKey, def.name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS) {
+                RegSetValueExW(hKey, def.name, 0, REG_SZ,
+                    (const BYTE*)def.value,
+                    static_cast<DWORD>((wcslen(def.value) + 1) * sizeof(wchar_t)));
+            }
+        }
+
+        // Set DWORD values if they do not exist
+        for (const auto& def : dwordDefaults) {
+            DWORD type = 0;
+            DWORD size = sizeof(DWORD);
+            if (RegQueryValueExW(hKey, def.name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS) {
+                RegSetValueExW(hKey, def.name, 0, REG_DWORD, (const BYTE*)&def.value, sizeof(DWORD));
+            }
+        }
+
+        RegCloseKey(hKey);
+    }
+
+    // Ensure blacklist and bad patterns files exist
+    std::wofstream blacklistOut(blacklistPath, std::ios::app);
+    if (blacklistOut.is_open()) {
+        blacklistOut << L"# Default Phylax blacklist\n# Enter blacklisted passwords one per line\n";
+        blacklistOut.close();
+    }
+
+    std::wofstream patternsOut(badPatternsPath, std::ios::app);
+    if (patternsOut.is_open()) {
+        patternsOut << L"# Default Phylax bad patterns\n# Enter forbidden patterns one per line\n";
+        patternsOut.close();
+    }
+}
+
+PhylaxSettings::PhylaxSettings():
+    logSize(10240),
     logRetention(10),
     minimumLength(12),
     complexity(3),
@@ -33,19 +116,7 @@ void PhylaxSettings::LoadFromRegistry() {
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, PHYLAX_REG_PATH, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
         // Default values if key doesn't exist
-        logPath = L"C:\\Windows\\System32";
-        logName = L"phylax.log";
-        logSize = 10240;
-        logRetention = 10;
-        minimumLength = 12;
-        complexity = 3;
-        rejectSequences = true;
-        rejectSequencesLength = 3;
-        rejectRepeats = true;
-        rejectRepeatsLength = 3;
-        blacklistPath = L"C:\\Windows\\System32\\phylax_blacklist.txt";
-        badPatternsPath = L"C:\\Windows\\System32\\phylax_bad_patterns.txt";
-        logLevel = LOGLEVEL_INFO;
+        CreateDefaultRegistrySettings();
     }
     else {
         WCHAR buffer[512]; DWORD len = sizeof(buffer);

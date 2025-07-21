@@ -15,6 +15,7 @@
 #include <sstream>
 #include <chrono>
 #include <atomic>
+#include <regex>
 #include <shlwapi.h>
 #include "PhylaxSettings.h"
 #include "PhylaxChecks.h"
@@ -33,10 +34,43 @@ PhylaxSettings g_settings;
 CRITICAL_SECTION g_cs;
 DWORD lastRegistryHash = 0;
 
-void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
+// Helper to rotate logs with respect to LogSize and LogRetention
+static void RotateLogIfNeeded() {
+    std::error_code ec;
+    std::wstring logFilePath = g_settings.logFullPath;
+
+    // Check current log size
+    if (!std::filesystem::exists(logFilePath, ec)) return;
+
+    auto size = std::filesystem::file_size(logFilePath, ec);
+    if (ec || size <= g_settings.logSize * 1024) return;  // logSize is in KB
+
+    // Generate base and extension
+    std::wstring basePath = logFilePath.substr(0, logFilePath.find_last_of(L'.'));
+    std::wstring ext = logFilePath.substr(logFilePath.find_last_of(L'.'));
+
+    // Delete/shift older rotated logs
+    for (int i = g_settings.logRetention - 1; i >= 1; --i) {
+        std::wstring oldName = basePath + L"." + std::to_wstring(i) + ext;
+        std::wstring newName = basePath + L"." + std::to_wstring(i + 1) + ext;
+        if (std::filesystem::exists(oldName, ec)) {
+            std::filesystem::rename(oldName, newName, ec);
+        }
+    }
+
+    // Move current log to .1
+    std::wstring firstRotated = basePath + L".1" + ext;
+    std::filesystem::rename(logFilePath, firstRotated, ec);
+}
+
+// Log helper
+static void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     if (level < g_settings.logLevel) return;
 
     CreateDirectoryW(g_settings.logPath.c_str(), NULL);
+
+    RotateLogIfNeeded();
+
     std::wofstream logFile;
     logFile.open(g_settings.logFullPath, std::ios_base::app);
     if (logFile.is_open()) {
@@ -63,7 +97,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     return TRUE;
 }
 
-DWORD ComputeRegistrySettingsHash() {
+static DWORD ComputeRegistrySettingsHash() {
     PhylaxSettings tempSettings;
     tempSettings.LoadFromRegistry();
 
@@ -93,7 +127,7 @@ DWORD ComputeRegistrySettingsHash() {
     return hash;
 }
 
-void LoadBlacklist(const std::wstring& path) {
+static void LoadBlacklist(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(g_settingsMutex);
     g_blacklist.clear();
     std::wifstream file(path);
@@ -108,7 +142,7 @@ void LoadBlacklist(const std::wstring& path) {
     LogEvent(L"[INFO] Blacklist loaded. Entries: " + std::to_wstring(g_blacklist.size()), LOGLEVEL_INFO);
 }
 
-void LoadBadPatterns(const std::wstring& path) {
+static void LoadBadPatterns(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(g_settingsMutex);
     g_badPatterns.clear();
     std::wifstream file(path);
@@ -123,7 +157,7 @@ void LoadBadPatterns(const std::wstring& path) {
     LogEvent(L"[INFO] Bad patterns loaded. Entries: " + std::to_wstring(g_badPatterns.size()), LOGLEVEL_INFO);
 }
 
-void BackgroundWorker() {
+static void BackgroundWorker() {
     static fs::file_time_type lastBlacklistWriteTime;
     static fs::file_time_type lastBadPatternsWriteTime;
 
@@ -133,9 +167,21 @@ void BackgroundWorker() {
             DWORD currentHash = ComputeRegistrySettingsHash();
             if (currentHash != lastRegistryHash) {
                 EnterCriticalSection(&g_cs);
+                LogEvent(L"[DEBUG] Registry settings changes detected. Reloading...", LOGLEVEL_DEBUG);
                 g_settings.LoadFromRegistry();
                 LeaveCriticalSection(&g_cs);
-                LogEvent(L"[INFO] Registry settings reloaded due to detected change.", LOGLEVEL_INFO);
+                LogEvent(L"[DEBUG] Registry setting logPath: " + g_settings.logPath, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting logName: " + g_settings.logName, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting logSize: " + g_settings.logSize, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting logRetention: " + g_settings.logRetention, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting minimumLength: " + g_settings.minimumLength, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting complexity: " + g_settings.complexity, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting rejectSequences: " + g_settings.rejectSequences, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting rejectSequencesLength: " + g_settings.rejectSequencesLength, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting rejectRepeats: " + g_settings.rejectRepeats, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting rejectRepeatsLength: " + g_settings.rejectRepeatsLength, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting blacklistPath: " + g_settings.blacklistPath, LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] Registry setting badPatternsPath: " + g_settings.badPatternsPath, LOGLEVEL_DEBUG);
                 lastRegistryHash = currentHash;
             }
         }
@@ -144,7 +190,7 @@ void BackgroundWorker() {
         if (fs::exists(g_settings.blacklistPath)) {
             auto newTime = fs::last_write_time(g_settings.blacklistPath);
             if (newTime != lastBlacklistWriteTime) {
-                LogEvent(L"[INFO] Detected change in blacklist file, reloading.", LOGLEVEL_INFO);
+                LogEvent(L"[DEBUG] Blacklist file changes detected. Reloading...", LOGLEVEL_DEBUG);
                 LoadBlacklist(g_settings.blacklistPath);
                 lastBlacklistWriteTime = newTime;
             }
@@ -154,19 +200,18 @@ void BackgroundWorker() {
         if (fs::exists(g_settings.badPatternsPath)) {
             auto newTime = fs::last_write_time(g_settings.badPatternsPath);
             if (newTime != lastBadPatternsWriteTime) {
-                LogEvent(L"[INFO] Detected change in bad patterns file, reloading.", LOGLEVEL_INFO);
+                LogEvent(L"[DEBUG] Bad patterns file changes detected. Reloading...", LOGLEVEL_DEBUG);
                 LoadBadPatterns(g_settings.badPatternsPath);
                 lastBadPatternsWriteTime = newTime;
             }
         }
-        std::this_thread::sleep_for(std::chrono::minutes(5));
+        std::this_thread::sleep_for(std::chrono::minutes(1));
     }
 }
 
 extern "C" __declspec(dllexport) BOOL WINAPI InitializeChangeNotify(void) {
     static std::thread worker(BackgroundWorker);
     worker.detach();
-    LogEvent(L"[DEBUG] InitializeChangeNotify() called - Phylax DLL loaded.", LOGLEVEL_DEBUG);
     return TRUE;
 }
 
@@ -220,7 +265,7 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         ULONGLONG now = GetTickCount64();
         std::lock_guard<std::mutex> lock(logMutex);
         if (acct != lastAcct || reason != lastReason || (now - lastTimestamp) > 1000) {
-            LogEvent(L"[ERROR] Password rejected due to " + reason + L" for account: " + acct, LOGLEVEL_ERROR);
+            LogEvent(L"[WARN] Password rejected due to " + reason + L" for account: " + acct, LOGLEVEL_WARN);
             lastAcct = acct;
             lastReason = reason;
             lastTimestamp = now;

@@ -34,4 +34,5 @@ public:
 
     PhylaxSettings();
     void LoadFromRegistry();
+    void CreateDefaultRegistrySettings();
 };
