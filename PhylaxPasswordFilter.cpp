@@ -183,20 +183,33 @@ static void BackgroundWorker() {
             DWORD currentHash = ComputeRegistrySettingsHash();
             if (currentHash != lastRegistryHash) {
                 EnterCriticalSection(&g_cs);
-                LogEvent(L"[DEBUG] Registry settings changes detected. Reloading...", LOGLEVEL_DEBUG);
+                LogEvent(L"[INFO] Registry settings changes detected. Reloading...", LOGLEVEL_INFO);
                 g_settings.LoadFromRegistry();
-                LogEvent(L"[DEBUG] Registry setting logPath: " + g_settings.logPath, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting logName: " + g_settings.logName, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting logSize: " + g_settings.logSize, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting logRetention: " + g_settings.logRetention, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting minimumLength: " + g_settings.minimumLength, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting complexity: " + g_settings.complexity, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting rejectSequences: " + g_settings.rejectSequences, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting rejectSequencesLength: " + g_settings.rejectSequencesLength, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting rejectRepeats: " + g_settings.rejectRepeats, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting rejectRepeatsLength: " + g_settings.rejectRepeatsLength, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting blacklistPath: " + g_settings.blacklistPath, LOGLEVEL_DEBUG);
-                LogEvent(L"[DEBUG] Registry setting badPatternsPath: " + g_settings.badPatternsPath, LOGLEVEL_DEBUG);
+                std::wstringstream ss;
+                ss << L"[DEBUG] Registry setting logPath: " << g_settings.logPath;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting logName: " << g_settings.logName;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting logSize: " << g_settings.logSize;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting logRetention: " << g_settings.logRetention;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting minimumLength: " << g_settings.minimumLength;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting complexity: " << g_settings.complexity;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting rejectSequences: " << g_settings.rejectSequences;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting rejectSequencesLength: " << g_settings.rejectSequencesLength;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting rejectRepeats: " << g_settings.rejectRepeats;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting rejectRepeatsLength: " << g_settings.rejectRepeatsLength;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting blacklistPath: " << g_settings.blacklistPath;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                ss << L"[DEBUG] Registry setting badPatternsPath: " << g_settings.badPatternsPath;
+                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
                 LeaveCriticalSection(&g_cs);
                 lastRegistryHash = currentHash;
             }
@@ -206,7 +219,7 @@ static void BackgroundWorker() {
         if (fs::exists(g_settings.blacklistPath)) {
             auto newTime = fs::last_write_time(g_settings.blacklistPath);
             if (newTime != lastBlacklistWriteTime) {
-                LogEvent(L"[DEBUG] Blacklist file changes detected. Reloading...", LOGLEVEL_DEBUG);
+                LogEvent(L"[INFO] Blacklist file changes detected. Reloading...", LOGLEVEL_INFO);
                 LoadBlacklist(g_settings.blacklistPath);
                 lastBlacklistWriteTime = newTime;
             }
@@ -216,12 +229,12 @@ static void BackgroundWorker() {
         if (fs::exists(g_settings.badPatternsPath)) {
             auto newTime = fs::last_write_time(g_settings.badPatternsPath);
             if (newTime != lastBadPatternsWriteTime) {
-                LogEvent(L"[DEBUG] Bad patterns file changes detected. Reloading...", LOGLEVEL_DEBUG);
+                LogEvent(L"[INFO] Bad patterns file changes detected. Reloading...", LOGLEVEL_INFO);
                 LoadBadPatterns(g_settings.badPatternsPath);
                 lastBadPatternsWriteTime = newTime;
             }
         }
-        std::this_thread::sleep_for(std::chrono::minutes(1));
+        std::this_thread::sleep_for(std::chrono::seconds(10));
     }
 }
 
@@ -236,7 +249,6 @@ extern "C" __declspec(dllexport) BOOL WINAPI PasswordChangeNotify(
     ULONG RelativeId,
     PUNICODE_STRING NewPassword
 ) {
-    LogEvent(L"[DEBUG] PasswordChangeNotify() called.", LOGLEVEL_DEBUG);
     return TRUE;
 }
 
@@ -249,6 +261,12 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     std::wstring acct(AccountName->Buffer, AccountName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
 
+    // Static cache to suppress duplicate log entries from pre-check and commit calls by LSASS
+    static std::mutex logMutex;
+    static std::wstring lastAcct;
+    static std::wstring lastReason;
+    static ULONGLONG lastTimestamp = 0;
+
     // LogEvent(L"[DEBUG] PasswordFilter() called for account: " + acct, LOGLEVEL_DEBUG);
 
     // Group check logic here
@@ -259,7 +277,13 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
             return TRUE;
         }
         else {
-            LogEvent(L"[DEBUG] User '" + acct + L"' is in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
+            ULONGLONG now = GetTickCount64();
+            std::lock_guard<std::mutex> lock(logMutex);
+            if (acct != lastAcct || (now - lastTimestamp) > 1000) {
+                LogEvent(L"[DEBUG] User '" + acct + L"' is in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
+                lastAcct = acct;
+                lastTimestamp = now;
+            }
         }
     }
 
@@ -270,12 +294,6 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         std::lock_guard<std::mutex> lock(g_settingsMutex);
         result = PhylaxChecks::CheckPassword(pwd, g_settings, g_blacklist, g_badPatterns, reason);
     }
-
-    // Static cache to suppress duplicate log entries
-    static std::mutex logMutex;
-    static std::wstring lastAcct;
-    static std::wstring lastReason;
-    static ULONGLONG lastTimestamp = 0;
 
     if (!result) {
         ULONGLONG now = GetTickCount64();
@@ -292,4 +310,3 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     LogEvent(L"[INFO] Password accepted for account: " + acct, LOGLEVEL_INFO);
     return TRUE;
 }
-

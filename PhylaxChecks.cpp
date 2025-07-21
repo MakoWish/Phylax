@@ -102,7 +102,7 @@ bool CheckPassword(const std::wstring& pwd, const PhylaxSettings& settings,
         return false;
     }
     if (ContainsBadPattern(pwd, patterns)) {
-        reason = L"forbidden pattern";
+        reason = L"forbidden string";
         return false;
     }
     return true;
