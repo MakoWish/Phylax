@@ -22,7 +22,7 @@ Technical reference: [Password Filters](https://learn.microsoft.com/en-us/window
 
 ## Installation
 
-Grab the latest release from [releases](https://github.com/octo-org/octo-repo/releases/latest). 
+Grab the latest release from [releases](https://github.com/MakoWish/Phylax/releases/latest). 
 
 `phylax.dll` must be placed on each domain controller in `C:\Windows\System32`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot.
 
