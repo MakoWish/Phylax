@@ -38,6 +38,8 @@ Save the key's new settings, and reboot the domain controller. Once reboot, Phyl
 
 _**Note**: Reboots are not required for changes. Modifications to the blacklist, bad patterns file, and registry settings changes are loaded automatically._
 
+_**Important**: If `RunAsPPL` is enabled on your domain controllers, you will need to have the DLL signed by Microsoft as outlined [here](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/file-signing-manage)._
+
 ## Removal
 
 To uninstall Phylax, you must remove the `phylax` string from the `REG_MULTI_SZ` key `Notification Packages`. Save the changes, and reboot the domain controller.
