@@ -174,3 +174,7 @@ If you're not sure where to start, feel free to open a discussion or an issue â€
 ## License
 
 Phylax is released under the MIT License. See `LICENSE` for details.
+
+## Disclaimer
+
+Although all efforts have been made to ensure this software functions without issue, I take no responsibility for the user (or misuse) of the code provided in this repository. Domain controllers are critical to the function of a Microsoft Active Directory domain, so please thoroughly test this software before deploying into production.
