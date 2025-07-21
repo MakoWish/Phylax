@@ -30,7 +30,11 @@ Grab the latest release from [releases](https://github.com/MakoWish/Phylax/relea
 HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\lsa
 ```
 
-Modify the `REG_MULTI_SZ` key `Notification Packages` and append the name of the DLL `phylax` (without the DLL extension) onto a new line. Save the key's new settings, and reboot the domain controller. Once reboot, Phylax will be loaded and start enforcing your chosen settings.
+Modify the `REG_MULTI_SZ` key `Notification Packages` and append the name of the DLL `phylax` (without the DLL extension) onto a new line. 
+
+![Enable Phylax](registry_enable.png)
+
+Save the key's new settings, and reboot the domain controller. Once reboot, Phylax will be loaded and start enforcing your chosen settings.
 
 _**Note**: Reboots are not required for changes. Modifications to the blacklist, bad patterns file, and registry settings changes are loaded automatically._
 
@@ -123,7 +127,7 @@ Setting this to `0` disables this enforcement.
 "RejectSequencesLength"="3"
 ```
 
-Setting this to `3` will block three-character sequences like `123` or `bca`, but will allow longer sequences like `1234`, or `dbca`
+Setting this to `3` will block three-character sequences like `123` or `bca`, but will allow shorter sequences like `12`, or `ba`
 If `RejectSequences` is set to `0`, this setting is ignored.
 
 ### Repeated Character Rejection
