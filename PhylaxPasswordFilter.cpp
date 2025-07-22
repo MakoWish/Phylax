@@ -35,6 +35,20 @@ PhylaxSettings g_settings;
 CRITICAL_SECTION g_cs;
 DWORD lastRegistryHash = 0;
 
+// DLLMain entry point
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        InitializeCriticalSection(&g_cs);
+        InitializeCriticalSection(&g_logLock);
+        g_settings.LoadFromRegistry();
+    }
+    else if (fdwReason == DLL_PROCESS_DETACH) {
+        DeleteCriticalSection(&g_cs);
+        DeleteCriticalSection(&g_logLock);
+    }
+    return TRUE;
+}
+
 // Helper to rotate logs with respect to LogSize and LogRetention
 static void RotateLogIfNeeded() {
     std::error_code ec;
@@ -89,19 +103,6 @@ static void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     }
 
     LeaveCriticalSection(&g_logLock);
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
-    if (fdwReason == DLL_PROCESS_ATTACH) {
-        InitializeCriticalSection(&g_cs);
-        InitializeCriticalSection(&g_logLock);
-        g_settings.LoadFromRegistry();
-    }
-    else if (fdwReason == DLL_PROCESS_DETACH) {
-        DeleteCriticalSection(&g_cs);
-        DeleteCriticalSection(&g_logLock);
-    }
-    return TRUE;
 }
 
 static DWORD ComputeRegistrySettingsHash() {
@@ -173,6 +174,11 @@ static void LoadBadPatterns(const std::wstring& path) {
     LogEvent(L"[INFO] Bad patterns loaded. Entries: " + std::to_wstring(g_badPatterns.size()), LOGLEVEL_INFO);
 }
 
+/*
+Background worker to check for and load changes from blocklist file, bad patterns file, and registry settings.
+This function has no parameters.
+This function has no return.
+*/
 static void BackgroundWorker() {
     static fs::file_time_type lastBlacklistWriteTime;
     static fs::file_time_type lastBadPatternsWriteTime;
@@ -238,12 +244,55 @@ static void BackgroundWorker() {
     }
 }
 
+/*
+InitializeChangeNotify()
+------------------------
+InitializeChangeNotify is called by the Local Security Authority (LSA) to verify that the password notification DLL is loaded and initialized.
+This function must use the __stdcall calling convention, and must be exported by the DLL.
+This function is called only for password filters that are installed and registered on a system.
+Any process exception that is not handled within this function may cause security-related failures system-wide. Structured exception handling should be used when appropriate.
+
+This callback function has no parameters.
+
+Return code 	Description
+TRUE
+    The password filter DLL is initialized.
+FALSE
+    The password filter DLL is not initialized.
+*/
 extern "C" __declspec(dllexport) BOOL WINAPI InitializeChangeNotify(void) {
     static std::thread worker(BackgroundWorker);
     worker.detach();
     return TRUE;
 }
 
+/*
+PasswordChangeNotify()
+----------------------
+The PasswordChangeNotify function is called after the PasswordFilter function has been called successfully and the new password has been stored.
+
+Parameters:
+UserName [in]
+    The account name of the user whose password changed.
+    If the values of this parameter and the NewPassword parameter are NULL, this function should return STATUS_SUCCESS.
+RelativeId [in]
+    The relative identifier (RID) of the user specified in UserName.
+NewPassword [in]
+    A new plaintext password for the user specified in UserName. When you have finished using the password, clear the
+    information by calling the SecureZeroMemory function. For more information about protecting passwords, see Handling Passwords.
+    If the values of this parameter and the UserName parameter are NULL, this function should return STATUS_SUCCESS.
+
+Return code 	Description
+STATUS_SUCCESS
+    Indicates the password of the user was changed, or that the values of both the UserName and NewPassword parameters are NULL.
+
+This function must use the __stdcall calling convention and must be exported by the DLL.
+When the PasswordChangeNotify routine is running, processing is blocked until the routine is finished. When appropriate, 
+move any lengthy processing to a separate thread prior to returning from this routine.
+This function is called only for password filters that are installed and registered on the system.
+Any process exception that is not handled within this function may cause security-related failures system-wide. 
+Structured exception handling should be used when appropriate.
+*/
 extern "C" __declspec(dllexport) BOOL WINAPI PasswordChangeNotify(
     PUNICODE_STRING UserName,
     ULONG RelativeId,
@@ -252,6 +301,45 @@ extern "C" __declspec(dllexport) BOOL WINAPI PasswordChangeNotify(
     return TRUE;
 }
 
+/*
+PasswordFilter()
+----------------
+The PasswordFilter function is implemented by a password filter DLL. The value returned by this 
+function determines whether the new password is accepted by the system. All of the password filters 
+installed on a system must return TRUE for the password change to take effect.
+
+Parameters:
+[in] AccountName
+    Pointer to a UNICODE_STRING that represents the name of the user whose password changed.
+[in] FullName
+    Pointer to a UNICODE_STRING that represents the full name of the user whose password changed.
+[in] Password
+    Pointer to a UNICODE_STRING that represents the new plaintext password. When you have finished 
+    using the password, clear it from memory by calling the SecureZeroMemory function. For more 
+    information on protecting the password, see Handling Passwords.
+[in] SetOperation
+    TRUE if the password was set rather than changed.
+
+Return code 	Description
+TRUE
+    Return TRUE if the new password is valid with respect to the password policy implemented in the 
+    password filter DLL. When TRUE is returned, the Local Security Authority (LSA) continues to evaluate 
+    the password by calling any other password filters installed on the system.
+FALSE
+    Return FALSE if the new password is not valid with respect to the password policy implemented in 
+    the password filter DLL. When FALSE is returned, the LSA returns the ERROR_ILL_FORMED_PASSWORD 
+    (1324) status code to the source of the password change request.
+
+This function must use the __stdcall calling convention and must be exported by the DLL.
+
+When the PasswordFilter routine is running, processing is blocked until the routine is finished. When 
+appropriate, move any lengthy processing to a separate thread prior to returning from this routine.
+
+This function is called only for password filters that are installed and registered on a system.
+
+Any process exception that is not handled within this function may cause security-related failures system-wide. 
+Structured exception handling should be used when appropriate.
+*/
 extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     PUNICODE_STRING AccountName,
     PUNICODE_STRING FullName,
@@ -260,6 +348,18 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
 ) {
     std::wstring acct(AccountName->Buffer, AccountName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
+
+    // Always allow password changes for the krbtgt account
+    if (wcscmp(AccountName, L"krbtgt") == 0)
+    {
+        LogMessageW(
+            LOG_DEBUG,
+            L"[%s:%s@%d] Always allowing password change for krbtgt account.",
+            __FILENAMEW__,
+            __FUNCTIONW__,
+            __LINE__);
+        return TRUE;
+    }
 
     // Static cache to suppress duplicate log entries from pre-check and commit calls by LSASS
     static std::mutex logMutex;

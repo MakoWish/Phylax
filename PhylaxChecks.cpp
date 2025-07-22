@@ -54,14 +54,10 @@ bool HasRepeated(const std::wstring& pwd, DWORD repeatLen) {
     return false;
 }
 
-std::wstring ToLower(const std::wstring& input) {
-    std::wstring output = input;
-    std::transform(output.begin(), output.end(), output.begin(), ::towlower);
-    return output;
-}
-
 bool IsBlacklisted(const std::wstring& pwd, const std::unordered_set<std::wstring>& blacklist) {
-    return blacklist.find(ToLower(pwd)) != blacklist.end();
+    std::wstring lower = pwd;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
+    return blacklist.find(lower) != blacklist.end();
 }
 
 bool ContainsBadPattern(const std::wstring& pwd, const std::unordered_set<std::wstring>& patterns) {
@@ -97,7 +93,7 @@ bool CheckPassword(const std::wstring& pwd, const PhylaxSettings& settings,
         reason = L"repeated characters";
         return false;
     }
-    if (blacklist.find(pwd) != blacklist.end()) {
+    if (IsBlacklisted(pwd, blacklist)) {
         reason = L"blacklisted password";
         return false;
     }
