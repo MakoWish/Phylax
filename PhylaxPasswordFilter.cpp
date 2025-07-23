@@ -30,19 +30,26 @@ std::atomic_bool g_running(true);
 std::unordered_set<std::wstring> g_blacklist;
 std::unordered_set<std::wstring> g_badPatterns;
 LARGE_INTEGER gPerformanceFrequency;
-PhylaxSettings g_settings;
-DWORD lastRegistryHash = 0;
 CRITICAL_SECTION g_cs;
 CRITICAL_SECTION g_logLock;
+PhylaxSettings g_settings;
+DWORD lastRegistryHash = 0;
 
-// DLLMain entry point
+/*
+DLLMain entry point
+Keep It Simple, Stupid (KISS)
+*/
 BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID lpvReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
+        // Disable needless thread notifications
+        DisableThreadLibraryCalls(hinstDLL);
+
+        // CRITICAL_SECTION inits only
         InitializeCriticalSection(&g_cs);
         InitializeCriticalSection(&g_logLock);
-        g_settings.LoadFromRegistry();
     }
     else if (fdwReason == DLL_PROCESS_DETACH) {
+        // Remove CRITICAL_SECTION's
         DeleteCriticalSection(&g_cs);
         DeleteCriticalSection(&g_logLock);
     }
@@ -50,7 +57,7 @@ BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID l
 }
 
 // Helper to rotate logs with respect to LogSize and LogRetention settings
-static void RotateLogIfNeeded() {
+void RotateLogIfNeeded() {
     std::error_code ec;
     std::wstring logFilePath = g_settings.logFullPath;
 
@@ -81,7 +88,7 @@ static void RotateLogIfNeeded() {
 /*
 Log helper
 */
-static void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
+void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     if (level < g_settings.logLevel) return;
 
     EnterCriticalSection(&g_logLock);
@@ -197,7 +204,6 @@ static void BackgroundWorker() {
             std::lock_guard<std::mutex> lock(g_settingsMutex);
             DWORD currentHash = ComputeRegistrySettingsHash();
             if (currentHash != lastRegistryHash) {
-                EnterCriticalSection(&g_cs);
                 if (lastRegistryHash == 0) {
                     LogEvent(L"[INFO] Loading Phylax settings from registry...", LOGLEVEL_INFO);
                 }
@@ -216,7 +222,6 @@ static void BackgroundWorker() {
                 LogEvent(L"[INFO] Registry setting RejectRepeatsLength: " + std::to_wstring(g_settings.rejectRepeatsLength), LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting BlacklistPath: " + g_settings.blacklistPath, LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting BadPatternsPath: " + g_settings.badPatternsPath, LOGLEVEL_INFO);
-                LeaveCriticalSection(&g_cs);
                 lastRegistryHash = currentHash;
             }
         }
@@ -271,8 +276,16 @@ FALSE
     The password filter DLL is not initialized.
 */
 extern "C" __declspec(dllexport) BOOL WINAPI InitializeChangeNotify(void) {
+    // Ensure default registry keys exist
+    g_settings.CreateDefaultRegistrySettings();
+    
+    // Now safely read every registry value
+    g_settings.LoadFromRegistry();
+
+    // Start background worker for detection of changes
     static std::thread worker(BackgroundWorker);
     worker.detach();
+
     return TRUE;
 }
 
@@ -359,12 +372,6 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     std::wstring acct(AccountName->Buffer, AccountName->Length / sizeof(WCHAR));
     std::wstring full(FullName->Buffer, FullName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
-    LARGE_INTEGER StartTime = { 0 };
-    LARGE_INTEGER EndTime = { 0 };
-    LARGE_INTEGER ElapsedMicroseconds = { 0 };
-
-    // Start a timer to calculate processing time
-    QueryPerformanceCounter(&StartTime);
 
     // Always allow password changes for the krbtgt account
     if (AccountName, L"krbtgt" == 0)
@@ -393,24 +400,25 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     */
     if (!g_settings.enforcedGroups.empty()) {
         if (!IsUserInEnforcedGroup(acct.c_str(), g_settings.enforcedGroups)) {
-            QueryPerformanceCounter(&EndTime);
-            ElapsedMicroseconds.QuadPart = EndTime.QuadPart - StartTime.QuadPart;
-            ElapsedMicroseconds.QuadPart *= 1000000;
-            ElapsedMicroseconds.QuadPart /= gPerformanceFrequency.QuadPart;
             LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is not in an enforced group, skipping password checks.", LOGLEVEL_DEBUG);
-            LeaveCriticalSection(&g_cs);
             return true;
         }
         else {
             ULONGLONG now = GetTickCount64();
             std::lock_guard<std::mutex> lock(logMutex);
             if (acct != lastAcct || (now - lastTimestamp) > 1000) {
-                LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is not in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
                 lastAcct = acct;
                 lastTimestamp = now;
             }
         }
     }
+    else {
+        LogEvent(L"[DEBUG] No enforced groups defined. Applying password policy to all users.", LOGLEVEL_DEBUG);
+    }
+
+    // Start timer
+    auto t0 = std::chrono::steady_clock::now();
 
     std::wstring reject_reason;
     bool is_accepted;
@@ -420,11 +428,14 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         is_accepted = PhylaxChecks::CheckPassword(pwd, g_settings, g_blacklist, g_badPatterns, reject_reason);
     }
 
+    auto t1 = std::chrono::steady_clock::now();
+    auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+
     if (!is_accepted) {
         ULONGLONG now = GetTickCount64();
         std::lock_guard<std::mutex> lock(logMutex);
         if (acct != lastAcct || reject_reason != lastReason || (now - lastTimestamp) > 1000) {
-            LogEvent(L"[WARN] Password rejected due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
+            LogEvent(L"[WARN] Password rejected after " + std::to_wstring(elapsedUs) + L"µs due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
             lastAcct = acct;
             lastReason = reject_reason;
             lastTimestamp = now;
@@ -432,6 +443,6 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         return false;
     }
 
-    LogEvent(L"[INFO] Password accepted for account: " + acct, LOGLEVEL_INFO);
+    LogEvent(L"[INFO] Password accepted after " + std::to_wstring(elapsedUs) + L"µs for account: " + acct, LOGLEVEL_INFO);
     return true;
 }

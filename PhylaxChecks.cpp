@@ -139,7 +139,7 @@ namespace PhylaxChecks {
             return false;
         }
         if (IsBlacklisted(pwd, blacklist)) {
-            reject_reason = L"blacklisted password";
+            reject_reason = L"blacklisted password " + pwd;
             return false;
         }
         if (ContainsBadPattern(pwd, patterns)) {
