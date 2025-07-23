@@ -152,7 +152,7 @@ namespace PhylaxChecks {
             }
         }
         if (IsBlacklisted(pwd, blacklist)) {
-            reject_reason = L"blacklisted/breached password \"" + pwd + L"\"";
+            reject_reason = L"blacklisted/breached password";
             return false;
         }
         std::wstring pat;
