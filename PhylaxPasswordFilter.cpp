@@ -410,14 +410,14 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         }
 
         if (!inGroup) {
-            LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is not a member of any enforced groups. Skipping password checks.", LOGLEVEL_DEBUG);
+            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is not a member of any enforced groups. Skipping password checks.", LOGLEVEL_INFO);
             return true;
         }
         else {
             ULONGLONG now = GetTickCount64();
             std::lock_guard<std::mutex> lock(logMutex);
             if (acct != lastAcct || (now - lastTimestamp) > 1000) {
-                LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is a member of enforced group \"" + matchedGroup.c_str() + L"\". Enforcing password checks.", LOGLEVEL_DEBUG);
+                LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced group \"" + matchedGroup.c_str() + L"\". Enforcing password checks.", LOGLEVEL_INFO);
                 lastAcct = acct;
                 lastTimestamp = now;
             }
