@@ -26,6 +26,7 @@
 // Globals
 namespace fs = std::filesystem;
 std::mutex g_settingsMutex;
+std::thread g_worker;
 std::atomic_bool g_running(true);
 std::unordered_set<std::wstring> g_blacklist;
 std::unordered_set<std::wstring> g_badPatterns;
@@ -45,12 +46,15 @@ BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID l
         DisableThreadLibraryCalls(hinstDLL);
 
         // CRITICAL_SECTION inits only
-        InitializeCriticalSection(&g_cs);
         InitializeCriticalSection(&g_logLock);
     }
     else if (fdwReason == DLL_PROCESS_DETACH) {
-        // Remove CRITICAL_SECTION's
-        DeleteCriticalSection(&g_cs);
+        // Kill our background watcher task
+        g_running = false;
+        if (g_worker.joinable())
+            g_worker.join();
+
+        // Remove CRITICAL_SECTION
         DeleteCriticalSection(&g_logLock);
     }
     return true;
@@ -276,6 +280,8 @@ FALSE
     The password filter DLL is not initialized.
 */
 extern "C" __declspec(dllexport) BOOL WINAPI InitializeChangeNotify(void) {
+    LogEvent(L"[INFO] Phylax password policy is starting...", LOGLEVEL_INFO);
+
     // Ensure default registry keys exist
     g_settings.CreateDefaultRegistrySettings();
     
@@ -283,8 +289,10 @@ extern "C" __declspec(dllexport) BOOL WINAPI InitializeChangeNotify(void) {
     g_settings.LoadFromRegistry();
 
     // Start background worker for detection of changes
-    static std::thread worker(BackgroundWorker);
-    worker.detach();
+    if (!g_worker.joinable()) {
+        g_running = true;
+        g_worker = std::thread(BackgroundWorker);
+    }
 
     return TRUE;
 }
@@ -321,7 +329,7 @@ extern "C" __declspec(dllexport) BOOL WINAPI PasswordChangeNotify(
     ULONG RelativeId,
     PUNICODE_STRING NewPassword
 ) {
-    return TRUE;
+    return true;
 }
 
 /*
@@ -373,17 +381,22 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     std::wstring full(FullName->Buffer, FullName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
 
-    // Always allow password changes for the krbtgt account
-    if (AccountName, L"krbtgt" == 0)
+    // Start a timer to calculate processing time
+    auto t0 = std::chrono::steady_clock::now();
+
+    // Always allow password changes for the krbtgt or RODC krbtgt accounts
+    if (acct == L"krbtgt" || acct.rfind(L"krbtgt_", 0) == 0)
     {
-        LogEvent(L"[DEBUG] Always allowing password change for krbtgt account.", LOGLEVEL_DEBUG);
-        return TRUE;
+        LogEvent(L"[DEBUG] Always allowing password change for krbtgt account \"" + acct + L"\".", LOGLEVEL_DEBUG);
+        return true;
     }
 
-    if (AccountName, L"krbtgt_" == 0)
-    {
-        LogEvent(L"[DEBUG] Always allowing password change for RODC krbtgt.", LOGLEVEL_DEBUG);
-        return TRUE;
+    // Log the start of SET or CHANGE attempt
+    if (SetOperation) {
+        LogEvent(L"[DEBUG] Attempting to SET password fur user " + acct + L".", LOGLEVEL_DEBUG);
+    }
+    else {
+        LogEvent(L"[DEBUG] Attempting to CHANGE password fur user " + acct + L".", LOGLEVEL_DEBUG);
     }
 
     // Static cache to suppress duplicate log entries from pre-check and commit calls by LSASS
@@ -411,11 +424,16 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
 
         if (!inGroup) {
             LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is not a member of any enforced groups. Skipping password checks.", LOGLEVEL_INFO);
+            if (!pwd.empty()) {
+                // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
+                SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
+                pwd.clear();
+                pwd.shrink_to_fit();
+            }
             return true;
         }
         else {
             ULONGLONG now = GetTickCount64();
-            std::lock_guard<std::mutex> lock(logMutex);
             if (acct != lastAcct || (now - lastTimestamp) > 1000) {
                 LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced group \"" + matchedGroup.c_str() + L"\". Enforcing password checks.", LOGLEVEL_INFO);
                 lastAcct = acct;
@@ -423,9 +441,6 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
             }
         }
     }
-
-    // Start timer
-    auto t0 = std::chrono::steady_clock::now();
 
     std::wstring reject_reason;
     bool is_accepted;
@@ -440,7 +455,6 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
 
     if (!is_accepted) {
         ULONGLONG now = GetTickCount64();
-        std::lock_guard<std::mutex> lock(logMutex);
         if (acct != lastAcct || reject_reason != lastReason || (now - lastTimestamp) > 1000) {
             LogEvent(L"[WARN] Password rejected after " + std::to_wstring(elapsedUs) + L"µs due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
             lastAcct = acct;
@@ -448,8 +462,20 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
             lastTimestamp = now;
         }
         return false;
+        if (!pwd.empty()) {
+            // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
+            SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
+            pwd.clear();
+            pwd.shrink_to_fit();
+        }
     }
 
     LogEvent(L"[INFO] Password accepted after " + std::to_wstring(elapsedUs) + L"µs for account: " + acct, LOGLEVEL_INFO);
+    if (!pwd.empty()) {
+        // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
+        SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
+        pwd.clear();
+        pwd.shrink_to_fit();
+    }
     return true;
 }
