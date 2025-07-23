@@ -17,12 +17,10 @@
 #include <atomic>
 #include <regex>
 #include <shlwapi.h>
+#include <algorithm>
 #include "PhylaxSettings.h"
 #include "PhylaxChecks.h"
-#include <algorithm>
 #include "PhylaxADUtils.h"
-#include "PhylaxGlobals.h"
-
 #pragma comment(lib, "Shlwapi.lib")
 
 // Globals
@@ -31,12 +29,14 @@ std::mutex g_settingsMutex;
 std::atomic_bool g_running(true);
 std::unordered_set<std::wstring> g_blacklist;
 std::unordered_set<std::wstring> g_badPatterns;
+LARGE_INTEGER gPerformanceFrequency;
 PhylaxSettings g_settings;
-CRITICAL_SECTION g_cs;
 DWORD lastRegistryHash = 0;
+CRITICAL_SECTION g_cs;
+CRITICAL_SECTION g_logLock;
 
 // DLLMain entry point
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID lpvReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         InitializeCriticalSection(&g_cs);
         InitializeCriticalSection(&g_logLock);
@@ -46,10 +46,10 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
         DeleteCriticalSection(&g_cs);
         DeleteCriticalSection(&g_logLock);
     }
-    return TRUE;
+    return true;
 }
 
-// Helper to rotate logs with respect to LogSize and LogRetention
+// Helper to rotate logs with respect to LogSize and LogRetention settings
 static void RotateLogIfNeeded() {
     std::error_code ec;
     std::wstring logFilePath = g_settings.logFullPath;
@@ -66,23 +66,25 @@ static void RotateLogIfNeeded() {
 
     // Delete/shift older rotated logs
     for (int i = g_settings.logRetention - 1; i >= 1; --i) {
-        std::wstring oldName = basePath + L"." + std::to_wstring(i) + ext;
-        std::wstring newName = basePath + L"." + std::to_wstring(i + 1) + ext;
+        std::wstring oldName = basePath + ext + L"." + std::to_wstring(i);
+        std::wstring newName = basePath + ext + L"." + std::to_wstring(i + 1);
         if (std::filesystem::exists(oldName, ec)) {
             std::filesystem::rename(oldName, newName, ec);
         }
     }
 
     // Move current log to .1
-    std::wstring firstRotated = basePath + L".1" + ext;
+    std::wstring firstRotated = basePath + ext + L".1";
     std::filesystem::rename(logFilePath, firstRotated, ec);
 }
 
-// Log helper
+/*
+Log helper
+*/
 static void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     if (level < g_settings.logLevel) return;
 
-    EnterCriticalSection(&g_logLock);  //
+    EnterCriticalSection(&g_logLock);
 
     CreateDirectoryW(g_settings.logPath.c_str(), NULL);
 
@@ -105,6 +107,9 @@ static void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     LeaveCriticalSection(&g_logLock);
 }
 
+/*
+Compute a hash from registry settings to detect changes
+*/
 static DWORD ComputeRegistrySettingsHash() {
     PhylaxSettings tempSettings;
     tempSettings.LoadFromRegistry();
@@ -135,6 +140,9 @@ static DWORD ComputeRegistrySettingsHash() {
     return hash;
 }
 
+/*
+Helper to load blacklisted passwords from file
+*/
 static void LoadBlacklist(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(g_settingsMutex);
     g_blacklist.clear();
@@ -159,6 +167,9 @@ static void LoadBlacklist(const std::wstring& path) {
     LogEvent(L"[INFO] Blacklist loaded. Entries: " + std::to_wstring(g_blacklist.size()), LOGLEVEL_INFO);
 }
 
+/*
+Helper to load forbidden patterns/strings from file
+*/
 static void LoadBadPatterns(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(g_settingsMutex);
     g_badPatterns.clear();
@@ -175,9 +186,7 @@ static void LoadBadPatterns(const std::wstring& path) {
 }
 
 /*
-Background worker to check for and load changes from blocklist file, bad patterns file, and registry settings.
-This function has no parameters.
-This function has no return.
+Background worker to check for and load changes from registry settings, blacklist file, and bad patterns file.
 */
 static void BackgroundWorker() {
     static fs::file_time_type lastBlacklistWriteTime;
@@ -189,56 +198,57 @@ static void BackgroundWorker() {
             DWORD currentHash = ComputeRegistrySettingsHash();
             if (currentHash != lastRegistryHash) {
                 EnterCriticalSection(&g_cs);
-                LogEvent(L"[INFO] Registry settings changes detected. Reloading...", LOGLEVEL_INFO);
-                g_settings.LoadFromRegistry();
-                std::wstringstream ss;
-                ss << L"[DEBUG] Registry setting logPath: " << g_settings.logPath;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting logName: " << g_settings.logName;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting logSize: " << g_settings.logSize;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting logRetention: " << g_settings.logRetention;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting minimumLength: " << g_settings.minimumLength;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting complexity: " << g_settings.complexity;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting rejectSequences: " << g_settings.rejectSequences;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting rejectSequencesLength: " << g_settings.rejectSequencesLength;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting rejectRepeats: " << g_settings.rejectRepeats;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting rejectRepeatsLength: " << g_settings.rejectRepeatsLength;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting blacklistPath: " << g_settings.blacklistPath;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
-                ss << L"[DEBUG] Registry setting badPatternsPath: " << g_settings.badPatternsPath;
-                LogEvent(ss.str(), LOGLEVEL_DEBUG); ss.str(L""); ss.clear();
+                if (lastRegistryHash == 0) {
+                    LogEvent(L"[INFO] Loading Phylax settings from registry...", LOGLEVEL_INFO);
+                }
+                else {
+                    LogEvent(L"[INFO] Registry settings changes detected. Reloading...", LOGLEVEL_INFO);
+                }
+                LogEvent(L"[INFO] Registry setting LogPath: " + g_settings.logPath, LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting LogName: " + g_settings.logName, LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting LogSize: " + std::to_wstring(g_settings.logSize), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting LogRetention: " + std::to_wstring(g_settings.logRetention), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting MinimumLength: " + std::to_wstring(g_settings.minimumLength), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting Complexity: " + std::to_wstring(g_settings.complexity), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting RejectSequences: " + std::to_wstring(g_settings.rejectSequences), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting RejectSequencesLength: " + std::to_wstring(g_settings.rejectSequencesLength), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting RejectRepeats: " + std::to_wstring(g_settings.rejectRepeats), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting RejectRepeatsLength: " + std::to_wstring(g_settings.rejectRepeatsLength), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting BlacklistPath: " + g_settings.blacklistPath, LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting BadPatternsPath: " + g_settings.badPatternsPath, LOGLEVEL_INFO);
                 LeaveCriticalSection(&g_cs);
                 lastRegistryHash = currentHash;
             }
         }
 
-        // Check if blacklist has changed
+        // Check if blacklist file has changed
         if (fs::exists(g_settings.blacklistPath)) {
             auto newTime = fs::last_write_time(g_settings.blacklistPath);
-            if (newTime != lastBlacklistWriteTime) {
-                LogEvent(L"[INFO] Blacklist file changes detected. Reloading...", LOGLEVEL_INFO);
+            if (lastBlacklistWriteTime == fs::file_time_type{}) {
+                // first time ever
+                LogEvent(L"[INFO] Loading blacklist file: " + g_settings.blacklistPath, LOGLEVEL_INFO);
                 LoadBlacklist(g_settings.blacklistPath);
-                lastBlacklistWriteTime = newTime;
             }
+            else if (newTime != lastBlacklistWriteTime) {
+                // subsequent reload
+                LogEvent(L"[INFO] Blacklist file change detected. Reloading...", LOGLEVEL_INFO);
+                LoadBlacklist(g_settings.blacklistPath);
+            }
+            lastBlacklistWriteTime = newTime;
         }
 
         // Check if bad patterns file has changed
         if (fs::exists(g_settings.badPatternsPath)) {
             auto newTime = fs::last_write_time(g_settings.badPatternsPath);
-            if (newTime != lastBadPatternsWriteTime) {
-                LogEvent(L"[INFO] Bad patterns file changes detected. Reloading...", LOGLEVEL_INFO);
+            if (lastBadPatternsWriteTime == fs::file_time_type{}) {
+                LogEvent(L"[INFO] Loading bad patterns file: " + g_settings.badPatternsPath, LOGLEVEL_INFO);
                 LoadBadPatterns(g_settings.badPatternsPath);
-                lastBadPatternsWriteTime = newTime;
             }
+            else if (newTime != lastBadPatternsWriteTime) {
+                LogEvent(L"[INFO] Bad patterns file change detected. Reloading...", LOGLEVEL_INFO);
+                LoadBadPatterns(g_settings.badPatternsPath);
+            }
+            lastBadPatternsWriteTime = newTime;
         }
         std::this_thread::sleep_for(std::chrono::seconds(10));
     }
@@ -341,23 +351,31 @@ Any process exception that is not handled within this function may cause securit
 Structured exception handling should be used when appropriate.
 */
 extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
-    PUNICODE_STRING AccountName,
-    PUNICODE_STRING FullName,
-    PUNICODE_STRING Password,
-    BOOLEAN SetOperation
+    _In_ PUNICODE_STRING AccountName,
+    _In_ PUNICODE_STRING FullName,
+    _In_ PUNICODE_STRING Password,
+    _In_ BOOLEAN SetOperation
 ) {
     std::wstring acct(AccountName->Buffer, AccountName->Length / sizeof(WCHAR));
+    std::wstring full(FullName->Buffer, FullName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
+    LARGE_INTEGER StartTime = { 0 };
+    LARGE_INTEGER EndTime = { 0 };
+    LARGE_INTEGER ElapsedMicroseconds = { 0 };
+
+    // Start a timer to calculate processing time
+    QueryPerformanceCounter(&StartTime);
 
     // Always allow password changes for the krbtgt account
-    if (wcscmp(AccountName, L"krbtgt") == 0)
+    if (AccountName, L"krbtgt" == 0)
     {
-        LogMessageW(
-            LOG_DEBUG,
-            L"[%s:%s@%d] Always allowing password change for krbtgt account.",
-            __FILENAMEW__,
-            __FUNCTIONW__,
-            __LINE__);
+        LogEvent(L"[DEBUG] Always allowing password change for krbtgt account.", LOGLEVEL_DEBUG);
+        return TRUE;
+    }
+
+    if (AccountName, L"krbtgt_" == 0)
+    {
+        LogEvent(L"[DEBUG] Always allowing password change for RODC krbtgt.", LOGLEVEL_DEBUG);
         return TRUE;
     }
 
@@ -367,46 +385,53 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     static std::wstring lastReason;
     static ULONGLONG lastTimestamp = 0;
 
-    // LogEvent(L"[DEBUG] PasswordFilter() called for account: " + acct, LOGLEVEL_DEBUG);
-
-    // Group check logic here
+    /*
+    Logic to check Active Directory group memberships.
+    If no groups are defined in the registry, apply the policy to all users.
+    If the user is not in an enforced group, return TRUE to skip password checks.
+    If the user is in an enforced group, apply the policy to the user.
+    */
     if (!g_settings.enforcedGroups.empty()) {
         if (!IsUserInEnforcedGroup(acct.c_str(), g_settings.enforcedGroups)) {
-            LogEvent(L"[DEBUG] User '" + acct + L"' is not in an enforced group, skipping password checks.", LOGLEVEL_DEBUG);
+            QueryPerformanceCounter(&EndTime);
+            ElapsedMicroseconds.QuadPart = EndTime.QuadPart - StartTime.QuadPart;
+            ElapsedMicroseconds.QuadPart *= 1000000;
+            ElapsedMicroseconds.QuadPart /= gPerformanceFrequency.QuadPart;
+            LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is not in an enforced group, skipping password checks.", LOGLEVEL_DEBUG);
             LeaveCriticalSection(&g_cs);
-            return TRUE;
+            return true;
         }
         else {
             ULONGLONG now = GetTickCount64();
             std::lock_guard<std::mutex> lock(logMutex);
             if (acct != lastAcct || (now - lastTimestamp) > 1000) {
-                LogEvent(L"[DEBUG] User '" + acct + L"' is in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is not in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
                 lastAcct = acct;
                 lastTimestamp = now;
             }
         }
     }
 
-    std::wstring reason;
-    bool result;
+    std::wstring reject_reason;
+    bool is_accepted;
 
     {
         std::lock_guard<std::mutex> lock(g_settingsMutex);
-        result = PhylaxChecks::CheckPassword(pwd, g_settings, g_blacklist, g_badPatterns, reason);
+        is_accepted = PhylaxChecks::CheckPassword(pwd, g_settings, g_blacklist, g_badPatterns, reject_reason);
     }
 
-    if (!result) {
+    if (!is_accepted) {
         ULONGLONG now = GetTickCount64();
         std::lock_guard<std::mutex> lock(logMutex);
-        if (acct != lastAcct || reason != lastReason || (now - lastTimestamp) > 1000) {
-            LogEvent(L"[WARN] Password rejected due to " + reason + L" for account: " + acct, LOGLEVEL_WARN);
+        if (acct != lastAcct || reject_reason != lastReason || (now - lastTimestamp) > 1000) {
+            LogEvent(L"[WARN] Password rejected due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
             lastAcct = acct;
-            lastReason = reason;
+            lastReason = reject_reason;
             lastTimestamp = now;
         }
-        return FALSE;
+        return false;
     }
 
     LogEvent(L"[INFO] Password accepted for account: " + acct, LOGLEVEL_INFO);
-    return TRUE;
+    return true;
 }
