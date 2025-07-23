@@ -3,4 +3,4 @@
 #include <string>
 #include <vector>
 
-bool IsUserInEnforcedGroup(PCWSTR username, const std::vector<std::wstring>& enforcedGroups);
+bool IsUserInGroup(PCWSTR username, PCWSTR groupName);

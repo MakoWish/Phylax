@@ -399,22 +399,29 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     If the user is in an enforced group, apply the policy to the user.
     */
     if (!g_settings.enforcedGroups.empty()) {
-        if (!IsUserInEnforcedGroup(acct.c_str(), g_settings.enforcedGroups)) {
-            LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is not in an enforced group, skipping password checks.", LOGLEVEL_DEBUG);
+        std::wstring matchedGroup;
+        bool inGroup = false;
+        for (const auto& grp : g_settings.enforcedGroups) {
+            if (IsUserInGroup(acct.c_str(), grp.c_str())) {
+                matchedGroup = grp;
+                inGroup = true;
+                break;
+            }
+        }
+
+        if (!inGroup) {
+            LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is not a member of any enforced groups. Skipping password checks.", LOGLEVEL_DEBUG);
             return true;
         }
         else {
             ULONGLONG now = GetTickCount64();
             std::lock_guard<std::mutex> lock(logMutex);
             if (acct != lastAcct || (now - lastTimestamp) > 1000) {
-                LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is in an enforced group, enforcing password checks.", LOGLEVEL_DEBUG);
+                LogEvent(L"[DEBUG] User '" + acct + L"' (" + full + L") is a member of enforced group \"" + matchedGroup.c_str() + L"\". Enforcing password checks.", LOGLEVEL_DEBUG);
                 lastAcct = acct;
                 lastTimestamp = now;
             }
         }
-    }
-    else {
-        LogEvent(L"[DEBUG] No enforced groups defined. Applying password policy to all users.", LOGLEVEL_DEBUG);
     }
 
     // Start timer

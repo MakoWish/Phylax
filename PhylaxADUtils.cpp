@@ -1,35 +1,34 @@
 #include "PhylaxADUtils.h"
-#include <windows.h>
 #include <lm.h>
 #pragma comment(lib, "Netapi32.lib")
 
-bool IsUserInEnforcedGroup(PCWSTR username, const std::vector<std::wstring>& enforcedGroups) {
-    LPBYTE pBuf = NULL;
+bool IsUserInGroup(PCWSTR username, PCWSTR groupName) {
+    LPBYTE pBuf = nullptr;
     DWORD entriesRead = 0, totalEntries = 0;
 
-    NET_API_STATUS nStatus = NetUserGetGroups(
-        NULL,         // local server (NULL means use current)
+    // Level 0 returns group names only (global/domain groups)
+    NET_API_STATUS status = NetUserGetGroups(
+        nullptr,        // local machine (DC)
         username,
-        0,            // level 0: group names only
+        0,
         &pBuf,
         MAX_PREFERRED_LENGTH,
         &entriesRead,
         &totalEntries
     );
 
-    if (nStatus != NERR_Success || pBuf == NULL)
+    if (status != NERR_Success || pBuf == nullptr) {
+        if (pBuf) NetApiBufferFree(pBuf);
         return false;
+    }
 
+    GROUP_USERS_INFO_0* groups = reinterpret_cast<GROUP_USERS_INFO_0*>(pBuf);
     bool found = false;
-    GROUP_USERS_INFO_0* pInfo = (GROUP_USERS_INFO_0*)pBuf;
-
-    for (DWORD i = 0; i < entriesRead && !found; ++i) {
-        std::wstring groupName = pInfo[i].grui0_name;
-        for (const auto& enforced : enforcedGroups) {
-            if (_wcsicmp(groupName.c_str(), enforced.c_str()) == 0) {
-                found = true;
-                break;
-            }
+    for (DWORD i = 0; i < entriesRead; ++i) {
+        // Compare case-insensitive
+        if (_wcsicmp(groups[i].grui0_name, groupName) == 0) {
+            found = true;
+            break;
         }
     }
 
