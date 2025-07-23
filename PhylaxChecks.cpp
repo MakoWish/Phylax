@@ -88,13 +88,14 @@ namespace PhylaxChecks {
     /*
     Check to see if the password contains a forbidden string
     */
-    bool ContainsBadPattern(const std::wstring& pwd, const std::unordered_set<std::wstring>& patterns) {
+    bool ContainsBadPattern(const std::wstring& pwd, const std::unordered_set<std::wstring>& patterns, std::wstring& patOut) {
         std::wstring lowerPwd = pwd;
         std::transform(lowerPwd.begin(), lowerPwd.end(), lowerPwd.begin(), towlower);
         for (const auto& pattern : patterns) {
             std::wstring lowerPattern = pattern;
             std::transform(lowerPattern.begin(), lowerPattern.end(), lowerPattern.begin(), towlower);
             if (lowerPwd.find(lowerPattern) != std::wstring::npos) {
+                patOut = pattern;
                 return true;
             }
         }
@@ -151,11 +152,12 @@ namespace PhylaxChecks {
             }
         }
         if (IsBlacklisted(pwd, blacklist)) {
-            reject_reason = L"blacklisted password \"" + pwd + L"\"";
+            reject_reason = L"blacklisted/breached password \"" + pwd + L"\"";
             return false;
         }
-        if (ContainsBadPattern(pwd, patterns)) {
-            reject_reason = L"forbidden string";
+        std::wstring pat;
+        if (ContainsBadPattern(pwd, patterns, pat)) {
+            reject_reason = L"forbidden string \"" + pat + L"\"";
             return false;
         }
         return true;
