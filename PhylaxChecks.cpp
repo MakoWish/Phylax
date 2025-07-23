@@ -37,7 +37,7 @@ namespace PhylaxChecks {
     Check for sequential characters (`1234`, `4321`, `abcd`, `dbca`)
     Number of characters in sequence is determinded by registry settings
     */
-    bool HasSequential(const std::wstring& pwd, DWORD seqLen) {
+    bool HasSequential(const std::wstring& pwd, DWORD seqLen, std::wstring& seqOut) {
         if (seqLen < 2 || pwd.length() < seqLen) return false;
         for (size_t i = 0; i <= pwd.length() - seqLen; ++i) {
             bool ascending = true, descending = true;
@@ -47,7 +47,10 @@ namespace PhylaxChecks {
                 if (next != curr + 1) ascending = false;
                 if (next != curr - 1) descending = false;
             }
-            if (ascending || descending) return true;
+            if (ascending || descending) {
+                seqOut = pwd.substr(i, seqLen);
+                return true;
+            }
         }
         return false;
     }
@@ -56,13 +59,16 @@ namespace PhylaxChecks {
     Check for repeated characters (`1111`, `AAAA`)
     Number of repeated characters is determinded by registry settings
     */
-    bool HasRepeated(const std::wstring& pwd, DWORD repeatLen) {
+    bool HasRepeated(const std::wstring& pwd, DWORD repeatLen, std::wstring& seqOut) {
         if (repeatLen < 2 || pwd.length() < repeatLen) return false;
         size_t count = 1;
         for (size_t i = 1; i < pwd.length(); ++i) {
             if (pwd[i] == pwd[i - 1]) {
                 count++;
-                if (count >= repeatLen) return true;
+                if (count >= repeatLen) {
+                    seqOut = std::wstring(repeatLen, pwd[i]);
+                    return true;
+                }
             } else {
                 count = 1;
             }
@@ -130,16 +136,22 @@ namespace PhylaxChecks {
             reject_reason = L"insufficient complexity";
             return false;
         }
-        if (settings.rejectSequences && HasSequential(pwd, settings.rejectSequencesLength)) {
-            reject_reason = L"sequential pattern";
-            return false;
+        if (settings.rejectSequences) {
+            std::wstring seq;
+            if (HasSequential(pwd, settings.rejectSequencesLength, seq)) {
+                reject_reason = L"sequential pattern \"" + seq + L"\"";
+                return false;
+            }
         }
-        if (settings.rejectRepeats && HasRepeated(pwd, settings.rejectRepeatsLength)) {
-            reject_reason = L"repeated characters";
-            return false;
+        if (settings.rejectRepeats) {
+            std::wstring rpt;
+            if (HasRepeated(pwd, settings.rejectRepeatsLength, rpt)) {
+                reject_reason = L"repeated characters \"" + rpt + L"\"";
+                return false;
+            }
         }
         if (IsBlacklisted(pwd, blacklist)) {
-            reject_reason = L"blacklisted password " + pwd;
+            reject_reason = L"blacklisted password \"" + pwd + L"\"";
             return false;
         }
         if (ContainsBadPattern(pwd, patterns)) {
