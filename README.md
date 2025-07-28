@@ -54,22 +54,26 @@ Phylax is configured via the Windows Registry under:
 HKEY_LOCAL_MACHINE\SOFTWARE\Phylax
 ```
 
-| Key Name                | Type       | Default                          | Description |
-|-------------------------|------------|----------------------------------|-------------|
-| `LogPath`               | `REG_SZ`   | `C:\Windows\System32`            | Path to the folder where logs will be written |
-| `LogName`               | `REG_SZ`   | `phylax.log`                     | Name of the log file |
-| `LogSize`               | `REG_DWORD`| `10240` (KB)                     | Maximum log file size before rotation |
-| `LogRetention`          | `REG_DWORD`| `10`                             | Number of rotated logs to retain |
-| `LogLevel`              | `REG_SZ`   | `INFO`                           | One of: `DEBUG`, `INFO`, `WARN`, `ERROR` |
-| `MinimumLength`         | `REG_DWORD`| `12`                             | Minimum allowed password length |
-| `Complexity`            | `REG_DWORD`| `3`                              | Minimum number of character classes (uppercase, lowercase, digit, symbol) required |
-| `RejectSequences`       | `REG_DWORD`| `1`                              | Reject character sequences (e.g. `abcd`, `1234`) |
-| `RejectSequencesLength` | `REG_DWORD`| `3`                              | Minimum sequence length to reject |
-| `RejectRepeats`         | `REG_DWORD`| `1`                              | Reject repeated characters (e.g. `aaaa`, `1111`) |
-| `RejectRepeatsLength`   | `REG_DWORD`| `3`                              | Minimum repeat length to reject |
-| `BlacklistFile`         | `REG_SZ`   | `C:\Windows\System32\phylax_blacklist.txt` | Path to blacklist file (one password per line) |
-| `BadPatternsFile`       | `REG_SZ`   | `C:\Windows\System32\phylax_bad_patterns.txt` | Path to file with known bad substrings |
-| `EnforcedGroups`        | `REG_SZ`   | *(empty)*                        | Comma-delimited list of AD group names to enforce policy on (if empty, policy is applied to all users) |
+| Key Name                | Type        | Default                          | Description |
+|-------------------------|-------------|----------------------------------|-------------|
+| `LogPath`               | `REG_SZ`    | `C:\Windows\System32`            | Path to the folder where logs will be written |
+| `LogName`               | `REG_SZ`    | `phylax.log`                     | Name of the log file |
+| `LogSize`               | `REG_DWORD` | `10240` (KB)                     | Maximum log file size before rotation |
+| `LogRetention`          | `REG_DWORD` | `10`                             | Number of rotated logs to retain |
+| `LogLevel`              | `REG_SZ`    | `INFO`                           | One of: `DEBUG`, `INFO`, `WARN`, `ERROR` |
+| `EnforcedGroups`        | `REG_SZ`    | *(empty)*                        | Comma-delimited list of AD group names to enforce policy on (if empty, policy is applied to all users) |
+| `MinimumLength`         | `REG_DWORD` | `12`                             | Default minimum allowed password length |
+| `AdmingGroups`          | `REG_SZ`    | *(empty)*                        | Comma-delimited list of admin groups to enforce different password length |
+| `AdminMinLength`        | `REG_DWORD` | `15`                             | Minimum allowed password length for admin groups |
+| `ServiceAccountGroups`  | `REG_SZ`    | *(empty)*                        | Comma-delimited list of admin groups to enforce different password length |
+| `ServiceMinLength`      | `REG_DWORD` | `20`                             | Minimum allowed password length for service account groups |
+| `Complexity`            | `REG_DWORD` | `3`                              | Minimum number of character classes (uppercase, lowercase, digit, symbol) required |
+| `RejectSequences`       | `REG_DWORD` | `1`                              | Reject character sequences (e.g. `abcd`, `1234`) |
+| `RejectSequencesLength` | `REG_DWORD` | `3`                              | Minimum sequence length to reject |
+| `RejectRepeats`         | `REG_DWORD` | `1`                              | Reject repeated characters (e.g. `aaaa`, `1111`) |
+| `RejectRepeatsLength`   | `REG_DWORD` | `3`                              | Minimum repeat length to reject |
+| `BlacklistFile`         | `REG_SZ`    | `C:\Windows\System32\phylax_blacklist.txt` | Path to blacklist file (one password per line) |
+| `BadPatternsFile`       | `REG_SZ`    | `C:\Windows\System32\phylax_bad_patterns.txt` | Path to file with known bad substrings |
 
 ### Real-Time Updates
 
@@ -82,10 +86,22 @@ Phylax watches for changes to both the registry and external files (`BlacklistFi
 To apply the policy only to select AD groups (e.g. during testing):
 
 ```reg
-"EnforcedGroups"="Domain Admins, Service Accounts, Tier0 Users"
+"EnforcedGroups"="Password Policy Users"
 ```
 
-If the current user changing their password is not a member of any of the listed groups, the policy checks will be skipped for that attempt. If `EnforcedGroups` is empty, the password policy applies to all users.
+To apply a different password length requirement for administrators:
+
+```reg
+"AdminGroups"="System Administrators, Domain Admins"
+```
+
+To apply a different password length requirement for service accounts:
+
+```reg
+"ServiceAccountGroups"="Service Accounts"
+```
+
+If the current user changing their password is not a member of any of the listed groups, the policy checks will be skipped for that attempt. If `EnforcedGroups` is empty, the password policy applies to all users not in `AdminGroups` or `ServiceAccountGroups`.
 
 ### Blocklist & Pattern Files
 
