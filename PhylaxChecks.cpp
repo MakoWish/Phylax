@@ -105,19 +105,7 @@ namespace PhylaxChecks {
     /*
     CheckPassword()
     ---------------
-    Main password policy check routine
-
-    Parameters:
-    pwd
-        The plain-text password that is to be checked
-    settings
-        The current registry settings for Phylax password auditor
-    blacklist
-        The in-memory blacklisted passwords
-    patterns
-        The in-memory forbidden patterns/strings
-    reason
-        Variable to return the reason for rejection (if rejected)
+    Main password policy check routine to check quality based on defined registry parameters
     
     Return:
     true

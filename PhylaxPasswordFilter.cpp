@@ -31,7 +31,6 @@ std::atomic_bool g_running(true);
 std::unordered_set<std::wstring> g_blacklist;
 std::unordered_set<std::wstring> g_badPatterns;
 LARGE_INTEGER gPerformanceFrequency;
-CRITICAL_SECTION g_cs;
 CRITICAL_SECTION g_logLock;
 PhylaxSettings g_settings;
 DWORD lastRegistryHash = 0;
@@ -227,6 +226,7 @@ static void BackgroundWorker() {
                 LogEvent(L"[INFO] Registry setting BlacklistPath: " + g_settings.blacklistPath, LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting BadPatternsPath: " + g_settings.badPatternsPath, LOGLEVEL_INFO);
                 lastRegistryHash = currentHash;
+                g_settings.LoadFromRegistry();
             }
         }
 
@@ -388,22 +388,22 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     if (acct == L"krbtgt" || acct.rfind(L"krbtgt_", 0) == 0)
     {
         LogEvent(L"[DEBUG] Always allowing password change for krbtgt account \"" + acct + L"\".", LOGLEVEL_DEBUG);
+        if (!pwd.empty()) {
+            // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
+            SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
+            pwd.clear();
+            pwd.shrink_to_fit();
+        }
         return true;
     }
 
     // Log the start of SET or CHANGE attempt
     if (SetOperation) {
-        LogEvent(L"[DEBUG] Attempting to SET password fur user " + acct + L".", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Attempting to SET password for user " + acct + L".", LOGLEVEL_DEBUG);
     }
     else {
-        LogEvent(L"[DEBUG] Attempting to CHANGE password fur user " + acct + L".", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Attempting to CHANGE password for user " + acct + L".", LOGLEVEL_DEBUG);
     }
-
-    // Static cache to suppress duplicate log entries from pre-check and commit calls by LSASS
-    static std::mutex logMutex;
-    static std::wstring lastAcct;
-    static std::wstring lastReason;
-    static ULONGLONG lastTimestamp = 0;
 
     /*
     Logic to check Active Directory group memberships.
@@ -433,12 +433,7 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
             return true;
         }
         else {
-            ULONGLONG now = GetTickCount64();
-            if (acct != lastAcct || (now - lastTimestamp) > 1000) {
-                LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced group \"" + matchedGroup.c_str() + L"\". Enforcing password checks.", LOGLEVEL_INFO);
-                lastAcct = acct;
-                lastTimestamp = now;
-            }
+            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced group \"" + matchedGroup.c_str() + L"\". Enforcing password checks.", LOGLEVEL_INFO);
         }
     }
 
@@ -454,20 +449,14 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
 
     if (!is_accepted) {
-        ULONGLONG now = GetTickCount64();
-        if (acct != lastAcct || reject_reason != lastReason || (now - lastTimestamp) > 1000) {
-            LogEvent(L"[WARN] Password rejected after " + std::to_wstring(elapsedUs) + L"µs due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
-            lastAcct = acct;
-            lastReason = reject_reason;
-            lastTimestamp = now;
-        }
-        return false;
+        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(elapsedUs) + L"µs due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
         if (!pwd.empty()) {
             // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
             SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
             pwd.clear();
             pwd.shrink_to_fit();
         }
+        return false;
     }
 
     LogEvent(L"[INFO] Password accepted after " + std::to_wstring(elapsedUs) + L"µs for account: " + acct, LOGLEVEL_INFO);
