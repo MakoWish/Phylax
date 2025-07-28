@@ -101,7 +101,9 @@ To apply a different password length requirement for service accounts:
 "ServiceAccountGroups"="Service Accounts"
 ```
 
-If the current user changing their password is not a member of any of the listed groups, the policy checks will be skipped for that attempt. If `EnforcedGroups` is empty, the password policy applies to all users not in `AdminGroups` or `ServiceAccountGroups`.
+If the current user changing their password is not a member of any of the listed groups, the policy checks will be skipped for that attempt. If `EnforcedGroups` is empty, the password policy applies to all users not found in `AdminGroups` or `ServiceAccountGroups`.
+
+**_NOTE: Group memberships are top-level only. Nested groups are not checked!_**
 
 ### Blocklist & Pattern Files
 
