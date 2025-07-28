@@ -17,11 +17,15 @@ enum LogLevel {
 class PhylaxSettings {
 public:
     std::vector<std::wstring> enforcedGroups;
+    std::vector<std::wstring> adminGroups;
+    std::vector<std::wstring> serviceGroups;
     std::wstring logPath;
     std::wstring logName;
     DWORD logSize;
     DWORD logRetention;
     DWORD minimumLength;
+    DWORD adminMinLength;
+    DWORD serviceMinLength;
     DWORD complexity;
     bool rejectSequences;
     DWORD rejectSequencesLength;

@@ -9,6 +9,20 @@
 
 #define PHYLAX_REG_PATH L"SOFTWARE\\Phylax"
 
+// Helper to split CSV into vector<wstring>
+auto parseCsv = [&](const std::wstring& raw) {
+    std::vector<std::wstring> out;
+    std::wstringstream ss(raw);
+    std::wstring item;
+    while (std::getline(ss, item, L',')) {
+        // trim whitespace…
+        item.erase(0, item.find_first_not_of(L" \t\r\n"));
+        item.erase(item.find_last_not_of(L" \t\r\n") + 1);
+        if (!item.empty()) out.push_back(item);
+    }
+    return out;
+    };
+
 void PhylaxSettings::CreateDefaultRegistrySettings() {
     HKEY hKey;
     DWORD disposition;
@@ -40,13 +54,17 @@ void PhylaxSettings::CreateDefaultRegistrySettings() {
             {L"BlacklistFile", L"C:\\Windows\\System32\\phylax_blacklist.txt"},
             {L"BadPatternsFile", L"C:\\Windows\\System32\\phylax_bad_patterns.txt"},
             {L"LogLevel", L"INFO"},
-            {L"EnforcedGroups", L""}
+            {L"EnforcedGroups", L""},
+            {L"AdminGroups", L""},
+            {L"ServiceAccountGroups", L""}
         };
 
         DWORDDefault dwordDefaults[] = {
             {L"LogSize", 10240},
             {L"LogRetention", 10},
             {L"MinimumLength", 12},
+            {L"AdminMinLength", 15},
+            {L"ServiceMinLength", 20},
             {L"Complexity", 3},
             {L"RejectSequences", 1},
             {L"RejectSequencesLength", 3},
@@ -86,7 +104,7 @@ void PhylaxSettings::CreateDefaultRegistrySettings() {
 
     std::wofstream patternsOut(badPatternsPath, std::ios::app);
     if (patternsOut.is_open()) {
-        patternsOut << L"# Default Phylax bad patterns\n# Enter case-insensitive forbidden patterns one per line\n";
+        patternsOut << L"# Default Phylax bad patterns\n# Enter case-insensitive forbidden patterns/strings one per line\n";
         patternsOut.close();
     }
 }
@@ -95,6 +113,8 @@ PhylaxSettings::PhylaxSettings():
     logSize(10240),
     logRetention(10),
     minimumLength(12),
+    adminMinLength(15),
+    serviceMinLength(20),
     complexity(3),
     rejectSequences(true),
     rejectSequencesLength(3),
@@ -150,6 +170,8 @@ void PhylaxSettings::LoadFromRegistry() {
         GetDWORD(L"LogSize", logSize, 10240);
         GetDWORD(L"LogRetention", logRetention, 10);
         GetDWORD(L"MinimumLength", minimumLength, 12);
+        GetDWORD(L"AdminMinLength", adminMinLength, 15);
+        GetDWORD(L"ServiceMinLength", serviceMinLength, 20);
         GetDWORD(L"Complexity", complexity, 3);
         GetBool(L"RejectSequences", rejectSequences, true);
         GetDWORD(L"RejectSequencesLength", rejectSequencesLength, 3);
@@ -167,6 +189,18 @@ void PhylaxSettings::LoadFromRegistry() {
             group.erase(group.find_last_not_of(L"") + 1);
             if (!group.empty()) enforcedGroups.push_back(group);
         }
+
+        // Get admin groups from registry
+        std::wstring rawAdmins;
+        GetStr(L"AdminGroups", rawAdmins, L"");
+        adminGroups = parseCsv(rawAdmins);
+        GetDWORD(L"AdminMinLength", adminMinLength, minimumLength);
+
+        // Get service account groups from registry
+        std::wstring rawServices;
+        GetStr(L"ServiceAccountGroups", rawServices, L"");
+        serviceGroups = parseCsv(rawServices);
+        GetDWORD(L"ServiceMinLength", serviceMinLength, minimumLength);
 
         // Read LogLevel as string
         std::wstring lvlStr;

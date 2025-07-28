@@ -22,6 +22,9 @@
 #include "PhylaxChecks.h"
 #include "PhylaxADUtils.h"
 #pragma comment(lib, "Shlwapi.lib")
+typedef LONG NTSTATUS;
+#define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
+
 
 // Globals
 namespace fs = std::filesystem;
@@ -208,16 +211,44 @@ static void BackgroundWorker() {
             DWORD currentHash = ComputeRegistrySettingsHash();
             if (currentHash != lastRegistryHash) {
                 if (lastRegistryHash == 0) {
+                    LogEvent(L"[INFO] Phylax password policy is starting...", LOGLEVEL_INFO);
                     LogEvent(L"[INFO] Loading Phylax settings from registry...", LOGLEVEL_INFO);
                 }
                 else {
                     LogEvent(L"[INFO] Registry settings changes detected. Reloading...", LOGLEVEL_INFO);
                 }
+                g_settings.LoadFromRegistry();
+
+                // Convert groups to CSV for logging
+                std::wstring groupsCSV;
+                for (size_t i = 0; i < g_settings.enforcedGroups.size(); ++i) {
+                    groupsCSV += g_settings.enforcedGroups[i];
+                    if (i + 1 < g_settings.enforcedGroups.size())
+                        groupsCSV += L",";
+                }
+                std::wstring adminGroupsCSV;
+                for (size_t i = 0; i < g_settings.adminGroups.size(); ++i) {
+                    adminGroupsCSV += g_settings.adminGroups[i];
+                    if (i + 1 < g_settings.adminGroups.size())
+                        adminGroupsCSV += L",";
+                }
+                std::wstring serviceGroupsCSV;
+                for (size_t i = 0; i < g_settings.serviceGroups.size(); ++i) {
+                    serviceGroupsCSV += g_settings.serviceGroups[i];
+                    if (i + 1 < g_settings.serviceGroups.size())
+                        serviceGroupsCSV += L",";
+                }
+
                 LogEvent(L"[INFO] Registry setting LogPath: " + g_settings.logPath, LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting LogName: " + g_settings.logName, LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting LogSize: " + std::to_wstring(g_settings.logSize), LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting LogRetention: " + std::to_wstring(g_settings.logRetention), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting EnforcedGroups: " + groupsCSV, LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting MinimumLength: " + std::to_wstring(g_settings.minimumLength), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting AdminGroups: " + adminGroupsCSV, LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting AdminMinLength: " + std::to_wstring(g_settings.adminMinLength), LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting ServiceAccountGroups: " + serviceGroupsCSV, LOGLEVEL_INFO);
+                LogEvent(L"[INFO] Registry setting ServiceMinLength: " + std::to_wstring(g_settings.serviceMinLength), LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting Complexity: " + std::to_wstring(g_settings.complexity), LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting RejectSequences: " + std::to_wstring(g_settings.rejectSequences), LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting RejectSequencesLength: " + std::to_wstring(g_settings.rejectSequencesLength), LOGLEVEL_INFO);
@@ -226,7 +257,6 @@ static void BackgroundWorker() {
                 LogEvent(L"[INFO] Registry setting BlacklistPath: " + g_settings.blacklistPath, LOGLEVEL_INFO);
                 LogEvent(L"[INFO] Registry setting BadPatternsPath: " + g_settings.badPatternsPath, LOGLEVEL_INFO);
                 lastRegistryHash = currentHash;
-                g_settings.LoadFromRegistry();
             }
         }
 
@@ -280,18 +310,18 @@ FALSE
     The password filter DLL is not initialized.
 */
 extern "C" __declspec(dllexport) BOOL WINAPI InitializeChangeNotify(void) {
-    LogEvent(L"[INFO] Phylax password policy is starting...", LOGLEVEL_INFO);
-
-    // Ensure default registry keys exist
-    g_settings.CreateDefaultRegistrySettings();
-    
-    // Now safely read every registry value
-    g_settings.LoadFromRegistry();
-
     // Start background worker for detection of changes
-    if (!g_worker.joinable()) {
-        g_running = true;
-        g_worker = std::thread(BackgroundWorker);
+    // This will load the initial settings and watch for changes
+    try {
+        if (!g_worker.joinable()) {
+            g_running = true;
+            g_worker = std::thread(BackgroundWorker);
+        }
+    }
+    catch (...) {
+        // Failing to load the worker means settings will not load. Bail out!
+        OutputDebugStringW(L"ERROR: Failed to create background worker thread!\n");
+        return FALSE;
     }
 
     return TRUE;
@@ -329,7 +359,7 @@ extern "C" __declspec(dllexport) BOOL WINAPI PasswordChangeNotify(
     ULONG RelativeId,
     PUNICODE_STRING NewPassword
 ) {
-    return true;
+    return STATUS_SUCCESS;
 }
 
 /*
@@ -381,13 +411,27 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     std::wstring full(FullName->Buffer, FullName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
 
+    // --- DE-DUPLICATION BY PASSWORD BUFFER POINTER ---
+    // LSASS calls the policy twice on a rejection. Try and deduplicate
+    // the rejection log events.
+    static thread_local void* lastPwdBuffer = nullptr;
+    bool shouldLog = (lastPwdBuffer != (void*)Password->Buffer);
+    if (shouldLog) {
+        lastPwdBuffer = (void*)Password->Buffer;
+    }
+    // Ensure next invocation resets the pointer
+    struct ClearLast {
+        ~ClearLast() { lastPwdBuffer = nullptr; }
+    } clearOnExit;
+
+
     // Start a timer to calculate processing time
-    auto t0 = std::chrono::steady_clock::now();
+    auto start = std::chrono::steady_clock::now();
 
     // Always allow password changes for the krbtgt or RODC krbtgt accounts
     if (acct == L"krbtgt" || acct.rfind(L"krbtgt_", 0) == 0)
     {
-        LogEvent(L"[DEBUG] Always allowing password change for krbtgt account \"" + acct + L"\".", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Always allowing password change for krbtgt account '" + acct + L"'.", LOGLEVEL_DEBUG);
         if (!pwd.empty()) {
             // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
             SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
@@ -399,18 +443,34 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
 
     // Log the start of SET or CHANGE attempt
     if (SetOperation) {
-        LogEvent(L"[DEBUG] Attempting to SET password for user " + acct + L".", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Attempting to SET password for user '" + acct + L"'.", LOGLEVEL_DEBUG);
     }
     else {
-        LogEvent(L"[DEBUG] Attempting to CHANGE password for user " + acct + L".", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Attempting to CHANGE password for user '" + acct + L"'.", LOGLEVEL_DEBUG);
     }
 
-    /*
-    Logic to check Active Directory group memberships.
-    If no groups are defined in the registry, apply the policy to all users.
-    If the user is not in an enforced group, return TRUE to skip password checks.
-    If the user is in an enforced group, apply the policy to the user.
-    */
+    // Default to minimum length from registry settings
+    DWORD effectiveMinLen = g_settings.minimumLength;
+
+    // Admins group minimum length override
+    for (auto& grp : g_settings.adminGroups) {
+        if (IsUserInGroup(acct.c_str(), grp.c_str())) {
+            effectiveMinLen = g_settings.adminMinLength;
+            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced admins group '" + grp.c_str() + L"'. Enforcing password checks.", LOGLEVEL_INFO);
+            goto gotMinLen;
+        }
+    }
+
+    // Service accounts group minimum override
+    for (auto& grp : g_settings.serviceGroups) {
+        if (IsUserInGroup(acct.c_str(), grp.c_str())) {
+            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced service accounts group '" + grp.c_str() + L"'. Enforcing password checks.", LOGLEVEL_INFO);
+            effectiveMinLen = g_settings.serviceMinLength;
+            goto gotMinLen;
+        }
+    }
+
+    // Default/EnforcedGroups minimum password length
     if (!g_settings.enforcedGroups.empty()) {
         std::wstring matchedGroup;
         bool inGroup = false;
@@ -433,8 +493,27 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
             return true;
         }
         else {
-            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced group \"" + matchedGroup.c_str() + L"\". Enforcing password checks.", LOGLEVEL_INFO);
+            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced group '" + matchedGroup.c_str() + L"'. Enforcing password checks.", LOGLEVEL_INFO);
         }
+    }
+
+    // Jump here once password length requirement acquired based on group membership
+    gotMinLen:;
+
+    // First, enforce minimum length
+    if (pwd.length() < effectiveMinLen) {
+        auto end = std::chrono::steady_clock::now();
+        double elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
+        double durationMs = std::round(elapsedMs * 1e5) / 1e5;
+
+        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(durationMs) + L"ms due to insufficient length for account: " + acct, LOGLEVEL_WARN);
+        if (!pwd.empty()) {
+            // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
+            SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
+            pwd.clear();
+            pwd.shrink_to_fit();
+        }
+        return FALSE;
     }
 
     std::wstring reject_reason;
@@ -445,26 +524,24 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         is_accepted = PhylaxChecks::CheckPassword(pwd, g_settings, g_blacklist, g_badPatterns, reject_reason);
     }
 
-    auto t1 = std::chrono::steady_clock::now();
-    auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+    auto end = std::chrono::steady_clock::now();
+    double elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
+    double durationMs = std::round(elapsedMs * 1e5) / 1e5;
 
-    if (!is_accepted) {
-        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(elapsedUs) + L"µs due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
-        if (!pwd.empty()) {
-            // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
-            SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
-            pwd.clear();
-            pwd.shrink_to_fit();
-        }
-        return false;
-    }
-
-    LogEvent(L"[INFO] Password accepted after " + std::to_wstring(elapsedUs) + L"µs for account: " + acct, LOGLEVEL_INFO);
+    // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
     if (!pwd.empty()) {
-        // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
         SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
         pwd.clear();
         pwd.shrink_to_fit();
     }
-    return true;
+
+    if (is_accepted) {
+        LogEvent(L"[INFO] Password accepted after " + std::to_wstring(durationMs) + L"ms for account: " + acct, LOGLEVEL_INFO);
+        return true;
+    }
+    else {
+        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(durationMs) + L"ms due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
+        return false;
+    }
+
 }
