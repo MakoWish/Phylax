@@ -72,7 +72,7 @@ The following table outlines the default settings that are generated on first st
 |-------------------------|-------------|----------------------------------|-------------|
 | `LogPath`               | `REG_SZ`    | `C:\Windows\System32`            | Path to the folder where logs will be written |
 | `LogName`               | `REG_SZ`    | `phylax.log`                     | Name of the log file |
-| `LogSize`               | `REG_DWORD` | `10240` (KB)                     | Maximum log file size before rotation |
+| `LogSize`               | `REG_DWORD` | `10240`                          | Maximum log file size in kB before rotation |
 | `LogRetention`          | `REG_DWORD` | `10`                             | Number of rotated logs to retain |
 | `LogLevel`              | `REG_SZ`    | `INFO`                           | One of: `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `EnforcedGroups`        | `REG_SZ`    | *(empty)*                        | Comma-delimited list of AD group names to enforce policy on (if empty, policy is applied to all users) |
