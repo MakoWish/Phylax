@@ -120,6 +120,16 @@ void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     LeaveCriticalSection(&g_logLock);
 }
 
+// Helper to append vector of strings to a stream, separated by comma
+std::wstring JoinGroupVector(const std::vector<std::wstring>& groups) {
+    std::wstring result;
+    for (const auto& group : groups) {
+        if (!result.empty()) result += L",";
+        result += group;
+    }
+    return result;
+}
+
 /*
 Compute a hash from registry settings to detect changes
 */
@@ -132,7 +142,12 @@ static DWORD ComputeRegistrySettingsHash() {
         << tempSettings.logName
         << tempSettings.logSize
         << tempSettings.logRetention
+        << JoinGroupVector(tempSettings.enforcedGroups)
         << tempSettings.minimumLength
+        << JoinGroupVector(tempSettings.adminGroups)
+        << tempSettings.adminMinLength
+        << JoinGroupVector(tempSettings.serviceGroups)
+        << tempSettings.serviceMinLength
         << tempSettings.complexity
         << tempSettings.rejectSequences
         << tempSettings.rejectSequencesLength
