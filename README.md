@@ -20,6 +20,8 @@ Phylax provides a flexible foundation for organizations looking to enforce moder
 
 Technical reference: [Password Filters](https://learn.microsoft.com/en-us/windows/win32/secmgmt/password-filters?redirectedfrom=MSDN)
 
+## Quick Links
+
 * [Installation](#installation)
 * [Configuration](#configuration)
 * [Bug Reporting](#bug-reporting)
