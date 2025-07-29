@@ -66,6 +66,8 @@ Phylax is configured via the Windows Registry under:
 HKEY_LOCAL_MACHINE\SOFTWARE\Phylax
 ```
 
+The following table outlines the default settings that are generated on first start.
+
 | Key Name                | Type        | Default                          | Description |
 |-------------------------|-------------|----------------------------------|-------------|
 | `LogPath`               | `REG_SZ`    | `C:\Windows\System32`            | Path to the folder where logs will be written |
@@ -95,7 +97,7 @@ Phylax watches for changes to both the registry and external files (`BlacklistFi
 
 ### Enforcing for Specific Groups
 
-To apply the policy only to select AD groups (e.g. during testing):
+To apply the policy only to select AD groups (useful during pilot testing):
 
 ```reg
 "EnforcedGroups"="Password Policy Users"
@@ -121,24 +123,27 @@ If the current user changing their password is not a member of any of the listed
 
 #### Blacklist File
 
-Path: as defined in `BlacklistFile`  
-Format: one password per line (e.g. breached or disallowed values  
-Case-insensitive matches will be rejected.  
+Path: `C:\Windows\System32\phylax_blacklist.txt`, or as defined in `BlacklistFile`  
+Format: one complete password per line (e.g. breached or disallowed passwords)  
+Case-insensitive matches of the full blacklisted password will be rejected.  
 **Example**:  
 ```
 p@ssw0rd1!
 breached@cct1
 qwerty731
 letmein
+changeme
 ```
 
 #### Bad Patterns File
 
-Path: as defined in `BadPatternsFile`  
-Format: one string per line. If a password **_contains_** this string (anywhere), it will be rejected.  
+Path: `C:\Windows\System32\phylax_bad_patterns.txt`, or as defined in `BadPatternsFile`  
+Format: one string per line.  
+Case-insensitive matches of a string. If a password **_contains_** this string (anywhere), it will be rejected.  
 **Example**:  
 ```
 admin
+@dmin
 p@ss
 qwerty
 companyname
@@ -152,14 +157,14 @@ This allows rejecting passwords like `MyAdminPass123` even though `admin` is onl
 "RejectSequences"="1"
 ```
 
-Setting this to `1` enables blocking of character sequences (`1234`, `4321`, `abcd`, `dcba`).  
+Setting this to `1` (default) enables blocking of character sequences (`1234`, `4321`, `abcd`, `dcba`).  
 Setting this to `0` disables this enforcement.
 
 ```reg
 "RejectSequencesLength"="3"
 ```
 
-Setting this to `3` will block three-character sequences like `123` or `bca`, but will allow shorter sequences like `12`, or `ba`
+Setting this to `3` (default) will block three-character sequences like `123` or `bca`, but will allow shorter sequences like `12`, or `ba`
 If `RejectSequences` is set to `0`, this setting is ignored.
 
 ### Repeated Character Rejection
@@ -168,14 +173,14 @@ If `RejectSequences` is set to `0`, this setting is ignored.
 "RejectRepeats"="1"
 ```
 
-Setting this to `1` enables blocking of repeated characters (`1111`, `aaaa`).  
+Setting this to `1` (default) enables blocking of repeated characters (`1111`, `aaaa`).  
 Setting this to `0` disables this enforcement.
 
 ```reg
 "RejectRepeatsLength"="3"
 ```
 
-Setting this to `3` will block three-character repetitions like `111` or `aaa`, but will allow longer repetitions like `1111`, or `aaaa`
+Setting this to `3` (default) will block three-character repetitions like `111` or `aaa`, but will allow shorter repetitions like `11`, or `aa`
 If `RejectRepeats` is set to `0`, this setting is ignored. 
 
 ## Bug Reporting
@@ -213,4 +218,4 @@ Phylax is released under the MIT License. See [LICENSE](../main/LICENSE) for det
 
 ## Disclaimer
 
-Although all efforts have been made to ensure this software functions without issue, I take no responsibility for the user (or misuse) of the code provided in this repository. Domain controllers are critical to the function of a Microsoft Active Directory domain, so please thoroughly test this software before deploying into production.
+Although all efforts have been made to ensure this software functions without issue, I take no responsibility for the use (or misuse) of the code provided in this repository. Domain controllers are critical to the function of a Microsoft Active Directory domain, so please thoroughly test this software before deploying into production.
