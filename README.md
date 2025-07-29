@@ -22,7 +22,7 @@ Technical reference: [Password Filters](https://learn.microsoft.com/en-us/window
 
 ## Installation
 
-Grab the latest release from [releases](https://github.com/MakoWish/Phylax/releases/latest). 
+Grab the latest release from [releases](../main/releases/latest). 
 
 The downloaded `phylax.dll` must be placed on each domain controller in `C:\Windows\System32\`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot. Under:
 
@@ -34,7 +34,7 @@ Find and edit the `REG_MULTI_SZ` key `Notification Packages` and append the name
 
 ![Enable Phylax](registry_enable.png)
 
-On first start, Phylax will create the default registry settings automatically (see [Registry Settings](#registry-settings) below). If you would prefer to change any of these settings before first start (helpful for pilot group testing), you may use the provided [default_registry_settings.reg](../blob/main/default_registry_settings.reg) to create the defaults, then adjust to your liking. Here is an example configuration with sample enforced groups defined (these may be different in your environment):
+On first start, Phylax will create the default registry settings automatically (see [Registry Settings](#registry-settings) below). If you would prefer to change any of these settings before first start (helpful for pilot group testing), you may use the provided [default_registry_settings.reg](../main/default_registry_settings.reg) to create the defaults, then adjust to your liking. Here is an example configuration with sample enforced groups defined (these may be different in your environment):
 
 ![Sample Registry Settings](example_registry_settings.png)
 
