@@ -10,11 +10,11 @@
 Phylax was designed to improve password hygiene in Windows environments by allowing organizations to:
 
 - Enforce minimum complexity and length requirements
-- Reject passwords that match common patterns or dictionary words
+- Reject passwords that match common patterns, strings, or common dictionary words
 - Block known compromised or disallowed passwords via a blacklist
-- Target enforcement to specific Active Directory groups
+- Target enforcement to specific Active Directory groups with three levels of length requirements (ie. default, admin, service account)
 - Log all password change activity and reasons for rejection
-- Support real-time updates to policies via registry and file changes — no reboot or DLL reload required
+- Support near-real-time updates to policies via registry and file changes — no reboot or DLL reload required
 
 Phylax provides a flexible foundation for organizations looking to enforce modern password security best practices while maintaining full control and auditability.
 
@@ -24,17 +24,21 @@ Technical reference: [Password Filters](https://learn.microsoft.com/en-us/window
 
 Grab the latest release from [releases](https://github.com/MakoWish/Phylax/releases/latest). 
 
-`phylax.dll` must be placed on each domain controller in `C:\Windows\System32`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot. Under:
+The downloaded `phylax.dll` must be placed on each domain controller in `C:\Windows\System32\`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot. Under:
 
 ```reg
 HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\lsa
 ```
 
-Modify the `REG_MULTI_SZ` key `Notification Packages` and append the name of the DLL `phylax` (without the DLL extension) onto a new line. 
+Find and edit the `REG_MULTI_SZ` key `Notification Packages` and append the name of the DLL `phylax` (without the DLL extension) onto a new line. 
 
 ![Enable Phylax](registry_enable.png)
 
-Save the key's new settings, and reboot the domain controller. Once reboot, Phylax will be loaded and start enforcing your chosen settings.
+On first start, Phylax will create the default registry settings automatically (see table below). If you would prefer to change any of these settings, you may use the provided [default_registry_settings.reg](https://github.com/MakoWish/Phylax/releases/latest) to create the defaults, then adjust to your liking. Here is an example configuration with sample enforced groups defined (these may be different in your environment):
+
+![Sample Registry Settings](example_registry_settings.png)
+
+Once you have placed `phylax.dll` into `C:\Windows\System32\` and are satisfied with your settings, or would like to accept the defaults, reboot the domain controller(s) for the password policy to take effect.
 
 _**Note**: Reboots are not required for changes. Modifications to the blacklist, bad patterns file, and registry settings changes are loaded automatically._
 
@@ -42,7 +46,7 @@ _**Important**: If `RunAsPPL` is enabled on your domain controllers, you will ne
 
 ## Removal
 
-To uninstall Phylax, you must remove the `phylax` string from the `REG_MULTI_SZ` key `Notification Packages`. Save the changes, and reboot the domain controller.
+To uninstall Phylax, you must remove the `phylax` string from the `REG_MULTI_SZ` key `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\lsa\Notification Packages`. Save the changes, and reboot the domain controller. Once back online, the password policy will no longer be in effect.
 
 ## Configuration
 
