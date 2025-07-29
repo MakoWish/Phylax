@@ -20,9 +20,15 @@ Phylax provides a flexible foundation for organizations looking to enforce moder
 
 Technical reference: [Password Filters](https://learn.microsoft.com/en-us/windows/win32/secmgmt/password-filters?redirectedfrom=MSDN)
 
+* [Installation](#installation)
+* [Configuration](#configuration)
+* [Bug Reporting](#bug-reporting)
+* [Disclaimer](#diclaimer)
+* [Removal](#removal)
+
 ## Installation
 
-Grab the latest release from [releases](/releases/latest). 
+Grab the latest release from [releases](https://github.com/MakoWish/Phylax/releases/latest/download/phylax.dll). 
 
 The downloaded `phylax.dll` must be placed on each domain controller in `C:\Windows\System32\`. Once the DLL is saved into `System32`, you must modify the registry to load the DLL on boot. Under:
 
@@ -201,7 +207,7 @@ If you're not sure where to start, feel free to open a discussion or an issue â€
 
 ## License
 
-Phylax is released under the MIT License. See `LICENSE` for details.
+Phylax is released under the MIT License. See [LICENSE](../main/LICENSE) for details.
 
 ## Disclaimer
 
