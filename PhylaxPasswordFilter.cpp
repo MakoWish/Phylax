@@ -22,7 +22,6 @@
 #include "PhylaxChecks.h"
 #include "PhylaxADUtils.h"
 #pragma comment(lib, "Shlwapi.lib")
-typedef LONG NTSTATUS;
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 
 
@@ -120,58 +119,10 @@ void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     LeaveCriticalSection(&g_logLock);
 }
 
-// Helper to append vector of strings to a stream, separated by comma
-std::wstring JoinGroupVector(const std::vector<std::wstring>& groups) {
-    std::wstring result;
-    for (const auto& group : groups) {
-        if (!result.empty()) result += L",";
-        result += group;
-    }
-    return result;
-}
-
-/*
-Compute a hash from registry settings to detect changes
-*/
-static DWORD ComputeRegistrySettingsHash() {
-    PhylaxSettings tempSettings;
-    tempSettings.LoadFromRegistry();
-
-    std::wstringstream ss;
-    ss << tempSettings.logPath
-        << tempSettings.logName
-        << tempSettings.logSize
-        << tempSettings.logRetention
-        << JoinGroupVector(tempSettings.enforcedGroups)
-        << tempSettings.minimumLength
-        << JoinGroupVector(tempSettings.adminGroups)
-        << tempSettings.adminMinLength
-        << JoinGroupVector(tempSettings.serviceGroups)
-        << tempSettings.serviceMinLength
-        << tempSettings.complexity
-        << tempSettings.rejectSequences
-        << tempSettings.rejectSequencesLength
-        << tempSettings.rejectRepeats
-        << tempSettings.rejectRepeatsLength
-        << tempSettings.blacklistPath
-        << tempSettings.badPatternsPath
-        << tempSettings.logLevel;
-
-    for (const auto& group : tempSettings.enforcedGroups)
-        ss << group;
-
-    std::wstring settingsStr = ss.str();
-    DWORD hash = 0;
-    for (wchar_t ch : settingsStr)
-        hash = (hash * 131) + ch;  // simple rolling hash
-
-    return hash;
-}
-
 /*
 Helper to load blacklisted passwords from file
 */
-static void LoadBlacklist(const std::wstring& path) {
+void LoadBlacklist(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(g_settingsMutex);
     g_blacklist.clear();
     std::wifstream file(path);
@@ -198,7 +149,7 @@ static void LoadBlacklist(const std::wstring& path) {
 /*
 Helper to load forbidden patterns/strings from file
 */
-static void LoadBadPatterns(const std::wstring& path) {
+void LoadBadPatterns(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(g_settingsMutex);
     g_badPatterns.clear();
     std::wifstream file(path);
@@ -216,7 +167,7 @@ static void LoadBadPatterns(const std::wstring& path) {
 /*
 Background worker to check for and load changes from registry settings, blacklist file, and bad patterns file.
 */
-static void BackgroundWorker() {
+void BackgroundWorker() {
     static fs::file_time_type lastBlacklistWriteTime;
     static fs::file_time_type lastBadPatternsWriteTime;
 
@@ -225,14 +176,16 @@ static void BackgroundWorker() {
             std::lock_guard<std::mutex> lock(g_settingsMutex);
             DWORD currentHash = ComputeRegistrySettingsHash();
             if (currentHash != lastRegistryHash) {
+                // Get our current settings from registry
+                g_settings.LoadFromRegistry();
+
                 if (lastRegistryHash == 0) {
-                    LogEvent(L"[INFO] Phylax password policy is starting...", LOGLEVEL_INFO);
+                    LogEvent(L"[INFO] Phylax Password Policy is loading...", LOGLEVEL_INFO);
                     LogEvent(L"[INFO] Loading Phylax settings from registry...", LOGLEVEL_INFO);
                 }
                 else {
                     LogEvent(L"[INFO] Registry settings changes detected. Reloading...", LOGLEVEL_INFO);
                 }
-                g_settings.LoadFromRegistry();
 
                 // Convert groups to CSV for logging
                 std::wstring groupsCSV;
@@ -425,19 +378,6 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     std::wstring acct(AccountName->Buffer, AccountName->Length / sizeof(WCHAR));
     std::wstring full(FullName->Buffer, FullName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
-
-    // --- DE-DUPLICATION BY PASSWORD BUFFER POINTER ---
-    // LSASS calls the policy twice on a rejection. Try and deduplicate
-    // the rejection log events.
-    static thread_local void* lastPwdBuffer = nullptr;
-    bool shouldLog = (lastPwdBuffer != (void*)Password->Buffer);
-    if (shouldLog) {
-        lastPwdBuffer = (void*)Password->Buffer;
-    }
-    // Ensure next invocation resets the pointer
-    struct ClearLast {
-        ~ClearLast() { lastPwdBuffer = nullptr; }
-    } clearOnExit;
 
 
     // Start a timer to calculate processing time
