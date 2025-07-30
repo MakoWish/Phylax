@@ -2,3 +2,7 @@
 Phylax/
 x64/
 ~AutoRecover.Phylax.vcxproj
+Phylax.rc
+Phylax.sln
+Phylax.aps
+Phylax.vcxproj
