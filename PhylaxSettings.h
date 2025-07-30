@@ -40,3 +40,9 @@ public:
     void LoadFromRegistry();
     void CreateDefaultRegistrySettings();
 };
+
+// Helper to join a vector of wstrings into a comma-separated wstring
+std::wstring JoinGroupVector(const std::vector<std::wstring>& groups);
+
+// Compute a rolling hash of current registry-based settings to detect changes
+DWORD ComputeRegistrySettingsHash();

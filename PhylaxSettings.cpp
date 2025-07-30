@@ -9,6 +9,21 @@
 
 #define PHYLAX_REG_PATH L"SOFTWARE\\Phylax"
 
+// Define default settings in case of registry load issues
+PhylaxSettings::PhylaxSettings() :
+    logSize(10240),
+    logRetention(10),
+    minimumLength(12),
+    adminMinLength(15),
+    serviceMinLength(20),
+    complexity(3),
+    rejectSequences(true),
+    rejectSequencesLength(3),
+    rejectRepeats(true),
+    rejectRepeatsLength(3),
+    logLevel(LOGLEVEL_INFO) {
+}
+
 // Helper to split CSV into vector<wstring>
 auto parseCsv = [&](const std::wstring& raw) {
     std::vector<std::wstring> out;
@@ -21,8 +36,19 @@ auto parseCsv = [&](const std::wstring& raw) {
         if (!item.empty()) out.push_back(item);
     }
     return out;
-    };
+};
 
+// Helper to append vector of strings to a stream, separated by comma
+std::wstring JoinGroupVector(const std::vector<std::wstring>& groups) {
+    std::wstring result;
+    for (const auto& group : groups) {
+        if (!result.empty()) result += L",";
+        result += group;
+    }
+    return result;
+}
+
+// Helper to create default registry settings
 void PhylaxSettings::CreateDefaultRegistrySettings() {
     HKEY hKey;
     DWORD disposition;
@@ -109,20 +135,9 @@ void PhylaxSettings::CreateDefaultRegistrySettings() {
     }
 }
 
-PhylaxSettings::PhylaxSettings():
-    logSize(10240),
-    logRetention(10),
-    minimumLength(12),
-    adminMinLength(15),
-    serviceMinLength(20),
-    complexity(3),
-    rejectSequences(true),
-    rejectSequencesLength(3),
-    rejectRepeats(true),
-    rejectRepeatsLength(3),
-    logLevel(LOGLEVEL_INFO) {
-}
-
+/*
+Helper to load string from registry
+*/
 std::wstring ReadStringSetting(HKEY hKey, const std::wstring& name, const std::wstring& defaultValue) {
     WCHAR buffer[1024];
     DWORD size = sizeof(buffer);
@@ -132,6 +147,9 @@ std::wstring ReadStringSetting(HKEY hKey, const std::wstring& name, const std::w
     return defaultValue;
 }
 
+/*
+Load registry settings
+*/
 void PhylaxSettings::LoadFromRegistry() {
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, PHYLAX_REG_PATH, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
@@ -219,4 +237,42 @@ void PhylaxSettings::LoadFromRegistry() {
     if (!logPath.empty() && logPath.back() != L'\\')
         logPath += L"\\";
     logFullPath = logPath + logName;
+}
+
+/*
+Compute a hash from registry settings to detect changes
+*/
+DWORD ComputeRegistrySettingsHash() {
+    PhylaxSettings tempSettings;
+    tempSettings.LoadFromRegistry();
+
+    std::wstringstream ss;
+    ss << tempSettings.logPath
+        << tempSettings.logName
+        << tempSettings.logSize
+        << tempSettings.logRetention
+        << JoinGroupVector(tempSettings.enforcedGroups)
+        << tempSettings.minimumLength
+        << JoinGroupVector(tempSettings.adminGroups)
+        << tempSettings.adminMinLength
+        << JoinGroupVector(tempSettings.serviceGroups)
+        << tempSettings.serviceMinLength
+        << tempSettings.complexity
+        << tempSettings.rejectSequences
+        << tempSettings.rejectSequencesLength
+        << tempSettings.rejectRepeats
+        << tempSettings.rejectRepeatsLength
+        << tempSettings.blacklistPath
+        << tempSettings.badPatternsPath
+        << tempSettings.logLevel;
+
+    for (const auto& group : tempSettings.enforcedGroups)
+        ss << group;
+
+    std::wstring settingsStr = ss.str();
+    DWORD hash = 0;
+    for (wchar_t ch : settingsStr)
+        hash = (hash * 131) + ch;  // simple rolling hash
+
+    return hash;
 }
