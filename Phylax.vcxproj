@@ -44,6 +44,10 @@
     <ClInclude Include="PhylaxADUtils.h" />
     <ClInclude Include="PhylaxSettings.h" />
     <ClInclude Include="PhylaxChecks.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Phylax.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
