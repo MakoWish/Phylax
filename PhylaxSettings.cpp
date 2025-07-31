@@ -49,7 +49,7 @@ std::wstring JoinGroupVector(const std::vector<std::wstring>& groups) {
 }
 
 // Helper to create default registry settings
-void PhylaxSettings::CreateDefaultRegistrySettings() {
+bool PhylaxSettings::CreateDefaultSettings() {
     HKEY hKey;
     DWORD disposition;
 
@@ -120,19 +120,42 @@ void PhylaxSettings::CreateDefaultRegistrySettings() {
 
         RegCloseKey(hKey);
     }
+    else {
+        LogEvent(L"[ERROR] Failed to create default registry settings.", LOGLEVEL_ERROR);
+        return false;
+    }
+
+    bool success = true;
 
     // Ensure blacklist and bad patterns files exist
     std::wofstream blacklistOut(blacklistPath, std::ios::app);
-    if (blacklistOut.is_open()) {
-        blacklistOut << L"# Default Phylax blacklist\n# Enter case-insensitive blacklisted passwords one per line\n";
+    if (!blacklistOut.is_open()) {
+        LogEvent(L"[ERROR] Failed to open or create blacklist file: " + blacklistPath, LOGLEVEL_ERROR);
+        success = false;
+    } else {
+        blacklistOut << L"############################################################\n";
+        blacklistOut << L"# List of fobidden patterns, strings, etc.to not be found\n";
+        blacklistOut << L"# in any part of a password.These include company - related\n";
+        blacklistOut << L"# words / names, proper names, dates, years, seasons, sports,\n";
+        blacklistOut << L"# common \"swipe\" patterns observed in passwords, etc.\n";
+        blacklistOut << L"############################################################\n";
         blacklistOut.close();
     }
 
     std::wofstream patternsOut(badPatternsPath, std::ios::app);
-    if (patternsOut.is_open()) {
-        patternsOut << L"# Default Phylax bad patterns\n# Enter case-insensitive forbidden patterns/strings one per line\n";
+    if (!patternsOut.is_open()) {
+        LogEvent(L"[ERROR] Failed to open or create bad-patterns file: " + badPatternsPath, LOGLEVEL_ERROR);
+        success = false;
+    } else {
+        patternsOut << L"############################################################\n";
+        patternsOut << L"# List of breached or cracked passwords.These are exact\n";
+        patternsOut << L"# matches (case-insensitive) that are to be disallowed\n";
+        patternsOut << L"# due to being breached, cracked during audits, etc.\n";
+        patternsOut << L"############################################################\n";
         patternsOut.close();
     }
+
+    return success;
 }
 
 /*
@@ -154,7 +177,7 @@ void PhylaxSettings::LoadFromRegistry() {
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, PHYLAX_REG_PATH, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
         // Default values if key doesn't exist
-        CreateDefaultRegistrySettings();
+        CreateDefaultSettings();
     }
     else {
         WCHAR buffer[512]; DWORD len = sizeof(buffer);

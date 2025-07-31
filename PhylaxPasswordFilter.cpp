@@ -127,7 +127,7 @@ void LoadBlacklist(const std::wstring& path) {
     g_blacklist.clear();
     std::wifstream file(path);
     if (!file) {
-        LogEvent(L"[WARN] Could not open blacklist file: " + path, LOGLEVEL_DEBUG);
+        LogEvent(L"[ERROR] Could not open blacklist file: " + path, LOGLEVEL_ERROR);
         return;
     }
     std::wstring line;
@@ -154,7 +154,7 @@ void LoadBadPatterns(const std::wstring& path) {
     g_badPatterns.clear();
     std::wifstream file(path);
     if (!file) {
-        LogEvent(L"[WARN] Could not open bad patterns file: " + path, LOGLEVEL_WARN);
+        LogEvent(L"[ERROR] Could not open bad patterns file: " + path, LOGLEVEL_ERROR);
         return;
     }
     std::wstring line;
@@ -379,14 +379,13 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     std::wstring full(FullName->Buffer, FullName->Length / sizeof(WCHAR));
     std::wstring pwd(Password->Buffer, Password->Length / sizeof(WCHAR));
 
-
     // Start a timer to calculate processing time
     auto start = std::chrono::steady_clock::now();
 
     // Always allow password changes for the krbtgt or RODC krbtgt accounts
     if (acct == L"krbtgt" || acct.rfind(L"krbtgt_", 0) == 0)
     {
-        LogEvent(L"[DEBUG] Always allowing password change for krbtgt account '" + acct + L"'.", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Always allowing password change for krbtgt account '" + acct + L"' (" + full + L")", LOGLEVEL_DEBUG);
         if (!pwd.empty()) {
             // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
             SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
@@ -398,10 +397,10 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
 
     // Log the start of SET or CHANGE attempt
     if (SetOperation) {
-        LogEvent(L"[DEBUG] Attempting to SET password for user '" + acct + L"'.", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Attempting to SET password for user '" + acct + L"' (" + full + L")", LOGLEVEL_DEBUG);
     }
     else {
-        LogEvent(L"[DEBUG] Attempting to CHANGE password for user '" + acct + L"'.", LOGLEVEL_DEBUG);
+        LogEvent(L"[DEBUG] Attempting to CHANGE password for user '" + acct + L"' (" + full + L")", LOGLEVEL_DEBUG);
     }
 
     // Default to minimum length from registry settings
@@ -448,7 +447,7 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
             return true;
         }
         else {
-            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced group '" + matchedGroup.c_str() + L"'. Enforcing password checks.", LOGLEVEL_INFO);
+            LogEvent(L"[INFO] User '" + acct + L"' (" + full + L") is a member of enforced users group '" + matchedGroup.c_str() + L"'. Enforcing password checks.", LOGLEVEL_INFO);
         }
     }
 
@@ -461,7 +460,7 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
         double elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
         double durationMs = std::round(elapsedMs * 1e5) / 1e5;
 
-        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(durationMs) + L"ms due to insufficient length for account: " + acct, LOGLEVEL_WARN);
+        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(durationMs) + L"ms due to insufficient length for user '" + acct + L"' (" + full + L")", LOGLEVEL_WARN);
         if (!pwd.empty()) {
             // Zero out the pwd variable to prevent plain-text passwords from remaining in memory
             SecureZeroMemory(&pwd[0], pwd.size() * sizeof(wchar_t));
@@ -491,11 +490,11 @@ extern "C" __declspec(dllexport) BOOLEAN WINAPI PasswordFilter(
     }
 
     if (is_accepted) {
-        LogEvent(L"[INFO] Password accepted after " + std::to_wstring(durationMs) + L"ms for account: " + acct, LOGLEVEL_INFO);
+        LogEvent(L"[INFO] Password accepted after " + std::to_wstring(durationMs) + L"ms for user '" + acct + L"'", LOGLEVEL_INFO);
         return true;
     }
     else {
-        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(durationMs) + L"ms due to " + reject_reason + L" for account: " + acct, LOGLEVEL_WARN);
+        LogEvent(L"[WARN] Password rejected after " + std::to_wstring(durationMs) + L"ms due to " + reject_reason + L" for user '" + acct + L"' (" + full + L")", LOGLEVEL_WARN);
         return false;
     }
 

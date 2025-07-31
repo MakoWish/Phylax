@@ -14,6 +14,9 @@ enum LogLevel {
     LOGLEVEL_ERROR = 3
 };
 
+// External declaration to use LogLevel within PhylaxSettings.cpp
+extern void LogEvent(const std::wstring& message, DWORD level);
+
 class PhylaxSettings {
 public:
     std::vector<std::wstring> enforcedGroups;
@@ -38,7 +41,8 @@ public:
 
     PhylaxSettings();
     void LoadFromRegistry();
-    void CreateDefaultRegistrySettings();
+    // Returns true on success, false if critical files can't be created
+    bool CreateDefaultSettings();
 };
 
 // Helper to join a vector of wstrings into a comma-separated wstring

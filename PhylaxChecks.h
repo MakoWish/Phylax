@@ -6,6 +6,9 @@
 #include "PhylaxSettings.h"
 #include <Windows.h>
 
+// External declaration to use LogLevel within PhylaxChecks.cpp
+extern void LogEvent(const std::wstring& message, DWORD level);
+
 namespace PhylaxChecks {
 
 bool CheckPassword(const std::wstring& pwd, const PhylaxSettings& settings,
