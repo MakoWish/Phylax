@@ -24,7 +24,6 @@
 #pragma comment(lib, "Shlwapi.lib")
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 
-
 // Globals
 namespace fs = std::filesystem;
 std::mutex g_settingsMutex;
@@ -90,9 +89,7 @@ void RotateLogIfNeeded() {
     std::filesystem::rename(logFilePath, firstRotated, ec);
 }
 
-/*
-Log helper
-*/
+// Log helper
 void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     if (level < g_settings.logLevel) return;
 
@@ -117,51 +114,6 @@ void LogEvent(const std::wstring& message, DWORD level = LOGLEVEL_INFO) {
     }
 
     LeaveCriticalSection(&g_logLock);
-}
-
-/*
-Helper to load blacklisted passwords from file
-*/
-void LoadBlacklist(const std::wstring& path) {
-    std::lock_guard<std::mutex> lock(g_settingsMutex);
-    g_blacklist.clear();
-    std::wifstream file(path);
-    if (!file) {
-        LogEvent(L"[ERROR] Could not open blacklist file: " + path, LOGLEVEL_ERROR);
-        return;
-    }
-    std::wstring line;
-    while (std::getline(file, line)) {
-        // Trim whitespace (optional but recommended)
-        line.erase(0, line.find_first_not_of(L" \t\r\n"));
-        line.erase(line.find_last_not_of(L" \t\r\n") + 1);
-
-        // Convert to lowercase
-        std::transform(line.begin(), line.end(), line.begin(), ::towlower);
-
-        if (!line.empty()) {
-            g_blacklist.insert(line);
-        }
-    }
-    LogEvent(L"[INFO] Blacklist loaded. Entries: " + std::to_wstring(g_blacklist.size()), LOGLEVEL_INFO);
-}
-
-/*
-Helper to load forbidden patterns/strings from file
-*/
-void LoadBadPatterns(const std::wstring& path) {
-    std::lock_guard<std::mutex> lock(g_settingsMutex);
-    g_badPatterns.clear();
-    std::wifstream file(path);
-    if (!file) {
-        LogEvent(L"[ERROR] Could not open bad patterns file: " + path, LOGLEVEL_ERROR);
-        return;
-    }
-    std::wstring line;
-    while (std::getline(file, line)) {
-        g_badPatterns.insert(line);
-    }
-    LogEvent(L"[INFO] Bad patterns loaded. Entries: " + std::to_wstring(g_badPatterns.size()), LOGLEVEL_INFO);
 }
 
 /*
@@ -243,6 +195,10 @@ void BackgroundWorker() {
             }
             lastBlacklistWriteTime = newTime;
         }
+        else {
+            LoadBlacklist(g_settings.blacklistPath);
+            lastBlacklistWriteTime = fs::last_write_time(g_settings.blacklistPath);
+        }
 
         // Check if bad patterns file has changed
         if (fs::exists(g_settings.badPatternsPath)) {
@@ -256,6 +212,11 @@ void BackgroundWorker() {
                 LoadBadPatterns(g_settings.badPatternsPath);
             }
             lastBadPatternsWriteTime = newTime;
+        }
+        else {
+            // Bad patterns file does not exist. Create it.
+            LoadBadPatterns(g_settings.badPatternsPath);
+            lastBadPatternsWriteTime = fs::last_write_time(g_settings.badPatternsPath);
         }
         std::this_thread::sleep_for(std::chrono::seconds(10));
     }
@@ -278,14 +239,16 @@ FALSE
     The password filter DLL is not initialized.
 */
 extern "C" __declspec(dllexport) BOOL WINAPI InitializeChangeNotify(void) {
-    // Start background worker for detection of changes
-    // This will load the initial settings and watch for changes
+    // Load/create settings
+    g_settings.LoadFromRegistry();
     try {
         if (!g_worker.joinable()) {
             g_running = true;
             g_worker = std::thread(BackgroundWorker);
         }
     }
+    // Start background worker for detection of changes
+    // This will load the initial settings and watch for changes
     catch (...) {
         // Failing to load the worker means settings will not load. Bail out!
         OutputDebugStringW(L"ERROR: Failed to create background worker thread!\n");

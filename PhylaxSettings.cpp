@@ -4,6 +4,7 @@
 #include <shlwapi.h>
 #include <algorithm>
 #include <fstream>
+#include <filesystem>
 
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -38,7 +39,7 @@ auto parseCsv = [&](const std::wstring& raw) {
     return out;
 };
 
-// Helper to append vector of strings to a stream, separated by comma
+// Helper to split vector<wstring> into CSV
 std::wstring JoinGroupVector(const std::vector<std::wstring>& groups) {
     std::wstring result;
     for (const auto& group : groups) {
@@ -128,34 +129,125 @@ bool PhylaxSettings::CreateDefaultSettings() {
     bool success = true;
 
     // Ensure blacklist and bad patterns files exist
-    std::wofstream blacklistOut(blacklistPath, std::ios::app);
-    if (!blacklistOut.is_open()) {
-        LogEvent(L"[ERROR] Failed to open or create blacklist file: " + blacklistPath, LOGLEVEL_ERROR);
-        success = false;
-    } else {
-        blacklistOut << L"############################################################\n";
-        blacklistOut << L"# List of fobidden patterns, strings, etc.to not be found\n";
-        blacklistOut << L"# in any part of a password.These include company - related\n";
-        blacklistOut << L"# words / names, proper names, dates, years, seasons, sports,\n";
-        blacklistOut << L"# common \"swipe\" patterns observed in passwords, etc.\n";
-        blacklistOut << L"############################################################\n";
-        blacklistOut.close();
-    }
+    //std::wofstream blacklistOut(blacklistPath, std::ios::app);
+    //if (!blacklistOut.is_open()) {
+        //LogEvent(L"[ERROR] Failed to open or create blacklist file: " + blacklistPath, LOGLEVEL_ERROR);
+        //success = false;
+    //} else {
+        //blacklistOut << L"############################################################\n";
+        //blacklistOut << L"# List of fobidden patterns, strings, etc.to not be found\n";
+        //blacklistOut << L"# in any part of a password.These include company - related\n";
+        //blacklistOut << L"# words / names, proper names, dates, years, seasons, sports,\n";
+        //blacklistOut << L"# common \"swipe\" patterns observed in passwords, etc.\n";
+        //blacklistOut << L"############################################################\n";
+        //blacklistOut.close();
+    //}
 
-    std::wofstream patternsOut(badPatternsPath, std::ios::app);
-    if (!patternsOut.is_open()) {
-        LogEvent(L"[ERROR] Failed to open or create bad-patterns file: " + badPatternsPath, LOGLEVEL_ERROR);
-        success = false;
-    } else {
-        patternsOut << L"############################################################\n";
-        patternsOut << L"# List of breached or cracked passwords.These are exact\n";
-        patternsOut << L"# matches (case-insensitive) that are to be disallowed\n";
-        patternsOut << L"# due to being breached, cracked during audits, etc.\n";
-        patternsOut << L"############################################################\n";
-        patternsOut.close();
-    }
+    //std::wofstream patternsOut(badPatternsPath, std::ios::app);
+    //if (!patternsOut.is_open()) {
+        //LogEvent(L"[ERROR] Failed to open or create bad-patterns file: " + badPatternsPath, LOGLEVEL_ERROR);
+        //success = false;
+    //} else {
+        //patternsOut << L"############################################################\n";
+        //patternsOut << L"# List of breached or cracked passwords.These are exact\n";
+        //patternsOut << L"# matches (case-insensitive) that are to be disallowed\n";
+        //patternsOut << L"# due to being breached, cracked during audits, etc.\n";
+        //patternsOut << L"############################################################\n";
+        //patternsOut.close();
+    //}
 
     return success;
+}
+
+// Helper to load blacklisted passwords from file
+void LoadBlacklist(const std::wstring& path) {
+    std::lock_guard<std::mutex> lock(g_settingsMutex);
+    g_blacklist.clear();
+
+    std::wifstream file(path);
+    if (!file) {
+        // File missing or unreadable - create it
+        LogEvent(L"[WARN] Blacklist not found, creating default: " + path, LOGLEVEL_WARN);
+        std::wofstream create(path, std::ios::out);
+        if (!create) {
+            LogEvent(L"[ERROR] Failed to create blacklist file: " + path, LOGLEVEL_ERROR);
+            return;
+        }
+        create
+            << L"############################################################\n"
+            << L"# List of breached or cracked passwords. These are exact\n"
+            << L"# matches (case-insensitive) that are to be disallowed\n"
+            << L"# due to being breached, cracked on internal audits, etc.\n"
+            << L"############################################################\n";
+        create.close();
+
+        // Re - try read
+        file.open(path);
+        if (!file) {
+            LogEvent(L"[ERROR] Still cannot open blacklist after create: " + path, LOGLEVEL_ERROR);
+            return;
+        }
+    }
+    std::wstring line;
+    while (std::getline(file, line)) {
+        // Trim whitespace (optional but recommended)
+        line.erase(0, line.find_first_not_of(L" \t\r\n"));
+        line.erase(line.find_last_not_of(L" \t\r\n") + 1);
+
+        // Convert to lowercase
+        std::transform(line.begin(), line.end(), line.begin(), ::towlower);
+
+        if (!line.empty()) {
+            g_blacklist.insert(line);
+        }
+    }
+    LogEvent(L"[INFO] Blacklist loaded. Entries: " + std::to_wstring(g_blacklist.size()), LOGLEVEL_INFO);
+}
+
+// Helper to load forbidden patterns/strings from file
+void LoadBadPatterns(const std::wstring& path) {
+    std::lock_guard<std::mutex> lock(g_settingsMutex);
+    g_badPatterns.clear();
+
+    std::wifstream file(path);
+    if (!file) {
+        // File missing or unreadable - create it
+        LogEvent(L"[WARN] Bad-patterns file not found, creating default: " + path, LOGLEVEL_WARN);
+        std::wofstream create(path, std::ios::out);
+        if (!create) {
+            LogEvent(L"[ERROR] Failed to create bad-patterns file: " + path, LOGLEVEL_ERROR);
+            return;
+        }
+        create
+            << L"############################################################\n"
+            << L"# List of fobidden patterns, strings, etc. to not be found\n"
+            << L"# in any part of a password. These include company - related\n"
+            << L"# words / names, proper names, dates, years, seasons, sports,\n"
+            << L"# common \"swipe\" patterns observed in passwords, etc.\n"
+            << L"############################################################\n";
+        create.close();
+
+        // 2b) Re-try read
+        file.open(path);
+        if (!file) {
+            LogEvent(L"[ERROR] Still cannot open bad-patterns after create: " + path, LOGLEVEL_ERROR);
+            return;
+        }
+    }
+    std::wstring line;
+    while (std::getline(file, line)) {
+        // Trim whitespace (optional but recommended)
+        line.erase(0, line.find_first_not_of(L" \t\r\n"));
+        line.erase(line.find_last_not_of(L" \t\r\n") + 1);
+
+        // Convert to lowercase
+        std::transform(line.begin(), line.end(), line.begin(), ::towlower);
+
+        if (!line.empty()) {
+            g_badPatterns.insert(line);
+        }
+    }
+    LogEvent(L"[INFO] Bad patterns loaded. Entries: " + std::to_wstring(g_badPatterns.size()), LOGLEVEL_INFO);
 }
 
 /*
@@ -178,6 +270,7 @@ void PhylaxSettings::LoadFromRegistry() {
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, PHYLAX_REG_PATH, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
         // Default values if key doesn't exist
         CreateDefaultSettings();
+        LogEvent(L"[WARN] Registry settings not found. Creating defaults...", LOGLEVEL_WARN);
     }
     else {
         WCHAR buffer[512]; DWORD len = sizeof(buffer);
