@@ -6,6 +6,16 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
+#include <mutex>
+#include <unordered_set>
+#include <unordered_map>
+
+void LoadBlacklist(const std::wstring& path);
+void LoadBadPatterns(const std::wstring& path);
+
+extern std::mutex g_settingsMutex;
+extern std::unordered_set<std::wstring> g_blacklist;
+extern std::unordered_set<std::wstring> g_badPatterns;
 
 enum LogLevel {
     LOGLEVEL_DEBUG = 0,
