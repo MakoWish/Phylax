@@ -151,6 +151,17 @@ companyname
 
 This allows rejecting passwords like `MyAdminPass123` even though `admin` is only part of the full string.
 
+**_Note_**: For the sake of logging, I like to put longer versions of names first. For instance, let's say someone attempts to set a password with `jennifer` as part of the password. If your list contains:
+
+```
+...
+jenni
+jennifer
+...
+```
+
+The log would say the password was rejected for containing the string `jenni`. It would be best to put the longer version of the name first so the log shows that it was rejected for containing the full `jennifer`.
+
 ### Sequence Rejection
 
 ```reg
