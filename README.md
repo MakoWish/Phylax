@@ -221,6 +221,10 @@ Contributions are welcome!
 
 If you're not sure where to start, feel free to open a discussion or an issue — suggestions, testing, documentation improvements, and code are all welcome.
 
+## Donate
+
+Like this project? [Buy me a coffee!](buymeacoffee.com/MakoWish)
+
 ---
 
 ## License
